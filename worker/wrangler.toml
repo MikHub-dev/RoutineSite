@@ -16,4 +16,4 @@ EMPREINTES = '{"5e":["489c1aecd78964bf6e285c1425430f40b6a14f6cc4ba1f9ffd2bc2f48b
 # Stockage : un espace KV (créé avec « npx wrangler kv namespace create SUIVI »). Remplacer l'id ci-dessous.
 [[kv_namespaces]]
 binding = "SUIVI"
-id = "REMPLACER_PAR_L_ID_DU_KV"
+id = "a79ebadd67144e54ad87fffa9ffc998c"
