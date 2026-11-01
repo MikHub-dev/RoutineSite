@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Séance du jour · RoutineSite</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="contenu.css">
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
+<style>
+  .seance { max-width: none; }
+  .seance-tete { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .fil { color: var(--doux); font-size: 14px; margin: 0 0 6px; }
+  .objectif { color: var(--doux); font-size: 17px; margin: 0 0 22px; }
+  .bloc { background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; padding: 20px 24px; margin-bottom: 18px; }
+  .bloc h2 { margin: 0 0 14px; font-size: 20px; }
+  .bloc h2 small { color: var(--doux); font-weight: 400; font-size: 14px; margin-left: 8px; }
+  .content { font-size: 17px; line-height: 1.65; }
+  .exo { border-top: 1px solid var(--bord); padding-top: 16px; margin-top: 16px; }
+  .exo:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+  .exo h3 { margin: 0 0 10px; font-size: 18px; }
+  .etoiles { color: var(--ambre, #e3b053); letter-spacing: 2px; margin-left: 8px; font-size: 15px; }
+  textarea.reponse {
+    width: 100%; min-height: 96px; resize: vertical; padding: 10px 12px;
+    background: var(--fond); color: var(--texte); border: 1px solid var(--bord); border-radius: 6px;
+    font: inherit; font-size: 16px; text-transform: none; letter-spacing: 0;
+  }
+  textarea.reponse:focus { outline: 2px solid var(--bleu); outline-offset: 1px; }
+  .envoi { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .info { color: var(--doux); font-size: 14px; margin: 10px 0 0; }
+  .ok { color: var(--vert); font-size: 15px; margin: 10px 0 0; }
+  .corr { margin-top: 14px; border-left: 3px solid var(--vert); padding: 4px 0 0 16px; }
+  .corr > .box-h { color: var(--vert); }
+  .navjour { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<header id="navbar">
+  <div class="nav-left">
+    <div class="logo-mark" aria-hidden="true">30'</div>
+    <div class="logo-text">
+      <span class="logo">RoutineSite</span>
+      <span class="logo-tagline">30 minutes par jour</span>
+    </div>
+  </div>
+  <nav class="nav-links" aria-label="Navigation">
+    <a href="index.html">Accueil</a>
+  </nav>
+</header>
+
+<main class="page seance" id="contenu"><p class="sous-titre">Chargement…</p></main>
+
+<script src="commun.js"></script>
+<script src="vendor/katex/katex.min.js"></script>
+<script>
+const ROUTINES = {
+  probabilites: { nom: "Probabilités en 100 jours", court: "Probabilités", fichier: "data/probabilites.json" },
+  technologie: { nom: "Technologie numérique en 100 jours", court: "Technologie numérique", fichier: "data/technologie.json" }
+};
+
+const params = new URLSearchParams(location.search);
+const cleRoutine = ROUTINES[params.get("r")] ? params.get("r") : null;
+let numero = parseInt(params.get("j"), 10);
+if (!(numero >= 1 && numero <= 100)) numero = 1;
+
+let session = null, jour = null;
+
+function mathematiques(racine) {
+  if (!window.katex) return;
+  racine.querySelectorAll(".tex").forEach(el => {
+    if (el.dataset.rendu) return;
+    try {
+      katex.render(el.textContent, el, { displayMode: el.classList.contains("tex-d"), throwOnError: false, strict: "ignore" });
+      el.dataset.rendu = "1";
+    } catch (e) {}
+  });
+}
+
+function cleBrouillon(i) { return `routinesite:brouillon:${cleRoutine}:${numero}:${normaliser(session.code)}:${i}`; }
+function lireBrouillon(i) { try { return localStorage.getItem(cleBrouillon(i)) || ""; } catch (e) { return ""; } }
+function ecrireBrouillon(i, v) { try { localStorage.setItem(cleBrouillon(i), v); } catch (e) {} }
+
+function afficherJour() {
+  const R = ROUTINES[cleRoutine];
+  const faits = lireJours(cleRoutine, session.code);
+  const fait = faits.includes(numero);
+  const c = document.getElementById("contenu");
+  const precedent = numero > 1 ? `<a class="btn btn--secondaire" href="jour.html?r=${cleRoutine}&j=${numero - 1}">← Jour ${numero - 1}</a>` : "<span></span>";
+  const suivant = numero < 100 ? `<a class="btn btn--secondaire" href="jour.html?r=${cleRoutine}&j=${numero + 1}">Jour ${numero + 1} →</a>` : "<span></span>";
+  c.innerHTML = `
+    <p class="fil"><a class="lien" href="index.html">← Mon espace</a> · ${esc(R.nom)} · ${esc(nomClasse(session.classe))}</p>
+    <div class="seance-tete"><h1 class="titre">Jour ${numero} · ${esc(jour.titreTxt || jour.titre)}</h1></div>
+    <p class="objectif">${esc(jour.niveau)} — ${esc(jour.objectif)}</p>
+
+    <section class="bloc"><h2>Apprendre <small>≈ 12 minutes</small></h2>
+      <div class="content">${jour.apprendre}</div></section>
+
+    <section class="bloc"><h2>Exercices <small>≈ 18 minutes · réponds aux trois puis envoie-les</small></h2>
+      ${jour.exercices.map((e, i) => `
+        <div class="exo">
+          <h3>Exercice ${i + 1} · ${esc(e.titre)}<span class="etoiles" aria-label="difficulté ${e.etoiles}">${"★".repeat(e.etoiles || 1)}</span></h3>
+          <div class="content">${e.enonce}</div>
+          <label class="code-label" for="rep-${i}">Ma réponse</label>
+          <textarea class="reponse" id="rep-${i}" maxlength="900" placeholder="Écris ta réponse ici (démarche et résultat)."></textarea>
+          <div class="corr" id="corr-${i}" hidden><div class="box-h">Corrigé</div><div class="content">${e.correction}</div></div>
+        </div>`).join("")}
+      <div class="envoi" style="margin-top:20px">
+        <button type="button" class="btn" id="envoyer">Envoyer mes réponses par e-mail</button>
+        <span class="info" id="etat"></span>
+      </div>
+      <p class="erreur" id="erreur" role="alert"></p>
+      <div id="secours" hidden>
+        <p class="info">Rien ne s'est ouvert ? Utilise l'un de ces moyens, puis écris à l'adresse indiquée.</p>
+        <div class="envoi"><button type="button" class="btn btn--secondaire" id="copier">Copier le message</button>
+          <a class="btn btn--secondaire" id="gmail" target="_blank" rel="noopener" href="#">Ouvrir dans Gmail</a></div>
+      </div>
+    </section>
+
+    <section class="bloc" id="retenir" hidden><h2>À retenir</h2>
+      <div class="content"><div class="box box-retenir"><div class="box-h">À retenir</div><p>${jour.retenir}</p></div></div></section>
+
+    <div class="navjour">${precedent}${suivant}</div>`;
+  jour.exercices.forEach((_, i) => {
+    const t = document.getElementById(`rep-${i}`);
+    t.value = lireBrouillon(i);
+    t.addEventListener("input", () => ecrireBrouillon(i, t.value));
+  });
+  document.getElementById("envoyer").addEventListener("click", envoyer);
+  if (fait) {
+    document.getElementById("etat").textContent = "✓ Jour terminé : tes réponses ont été envoyées. Tu peux relire les corrigés.";
+    revelerCorriges();
+  }
+  mathematiques(c);
+}
+
+function revelerCorriges() {
+  jour.exercices.forEach((_, i) => { document.getElementById(`corr-${i}`).hidden = false; });
+  document.getElementById("retenir").hidden = false;
+  mathematiques(document.getElementById("contenu"));
+}
+
+function composerMessage() {
+  const R = ROUTINES[cleRoutine];
+  const date = new Date().toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
+  const reponses = jour.exercices.map((e, i) =>
+    `Exercice ${i + 1} (${e.titre}) :\n${document.getElementById(`rep-${i}`).value.trim()}`).join("\n\n");
+  return {
+    sujet: `RoutineSite · ${R.court} · Jour ${numero} · ${normaliser(session.code)}`,
+    corps: `Code : ${normaliser(session.code)} (${nomClasse(session.classe)})\nRoutine : ${R.nom}\nJour ${numero} : ${jour.titreTxt || jour.titre}\nEnvoyé le : ${date}\n\n${reponses}\n`
+  };
+}
+
+function envoyer() {
+  const err = document.getElementById("erreur");
+  const vides = jour.exercices.filter((_, i) => !document.getElementById(`rep-${i}`).value.trim());
+  if (vides.length) {
+    err.textContent = "Réponds aux trois exercices avant d'envoyer ton e-mail.";
+    return;
+  }
+  err.textContent = "";
+  const m = composerMessage();
+  const sujet = encodeURIComponent(m.sujet), corps = encodeURIComponent(m.corps);
+  document.getElementById("gmail").href =
+    `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(ADRESSE_ENSEIGNANT)}&su=${sujet}&body=${corps}`;
+  document.getElementById("copier").onclick = async () => {
+    try { await navigator.clipboard.writeText(`À : ${ADRESSE_ENSEIGNANT}\nObjet : ${m.sujet}\n\n${m.corps}`); document.getElementById("etat").textContent = "Message copié."; }
+    catch (e) { document.getElementById("etat").textContent = "Copie impossible : sélectionne et copie tes réponses à la main."; }
+  };
+  document.getElementById("secours").hidden = false;
+  // Ouvre le logiciel de messagerie de l'élève avec le message prêt à envoyer.
+  location.href = `mailto:${ADRESSE_ENSEIGNANT}?subject=${sujet}&body=${corps}`;
+  ajouterJour(cleRoutine, session.code, numero);
+  document.getElementById("etat").textContent = "✓ Jour validé sur cet appareil. Envoie le message qui vient de s'ouvrir : les corrigés sont affichés ci-dessous.";
+  revelerCorriges();
+}
+
+(async function () {
+  const c = document.getElementById("contenu");
+  session = await sessionValide();
+  if (!session) { location.replace("index.html"); return; }
+  if (!cleRoutine) { c.innerHTML = `<p class="erreur">Routine inconnue. <a class="lien" href="index.html">Retour à mon espace</a></p>`; return; }
+  try {
+    const rep = await fetch(ROUTINES[cleRoutine].fichier);
+    const donnees = await rep.json();
+    jour = donnees.jours.find(j => j.n === numero);
+    if (!jour) throw new Error("jour introuvable");
+  } catch (e) {
+    c.innerHTML = `<p class="erreur">Impossible de charger la séance (ouvre le site depuis son adresse en ligne, pas depuis un fichier). <a class="lien" href="index.html">Retour</a></p>`;
+    return;
+  }
+  document.title = `Jour ${numero} · ${ROUTINES[cleRoutine].court} · RoutineSite`;
+  afficherJour();
+  window.addEventListener("load", () => mathematiques(document.getElementById("contenu")));
+})();
+</script>
+</body>
+</html>

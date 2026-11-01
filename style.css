@@ -1,0 +1,111 @@
+/* Même charte que MathSite : fond #0f1116, panneaux #1a1d24, bordures #2a2d35, bleu #7aa2ff. */
+:root {
+  --fond: #0f1116;
+  --barre: #1a1d24;
+  --panneau: #1a1d24;
+  --panneau-2: #151820;
+  --bord: #2a2d35;
+  --texte: #e6e6e6;
+  --doux: #9aa3b2;
+  --bleu: #7aa2ff;
+  --vert: #5fc98a;
+  --rouge: #ff6b6b;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Inter, Arial, sans-serif;
+  background: var(--fond);
+  color: var(--texte);
+  line-height: 1.55;
+}
+
+/* Barre de navigation */
+#navbar {
+  background: var(--barre);
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--bord);
+}
+.nav-left { display: flex; align-items: center; gap: 14px; }
+.logo-mark {
+  width: 48px; height: 48px; border-radius: 12px;
+  display: grid; place-items: center;
+  background: var(--panneau-2); border: 1px solid var(--bord);
+  color: var(--bleu); font-weight: 800; font-size: 20px; letter-spacing: -.02em;
+}
+.logo-text { display: flex; flex-direction: column; }
+.logo { font-size: 22px; font-weight: 700; color: var(--bleu); line-height: 1.2; }
+.logo-tagline { font-size: 13px; font-style: italic; color: var(--rouge); letter-spacing: .02em; }
+.nav-links { display: flex; align-items: center; flex-wrap: wrap; }
+.nav-links a, .nav-links button {
+  color: var(--bleu); font: inherit; font-weight: 700; font-size: 15px;
+  margin-left: 20px; text-decoration: none; background: none; border: 0; padding: 0; cursor: pointer;
+}
+.nav-links a:hover, .nav-links button:hover { color: #fff; }
+.nav-links a.active { color: #fff; border-bottom: 2px solid var(--bleu); padding-bottom: 4px; }
+.nav-links [hidden] { display: none; }
+
+/* Page : occupe toute la largeur */
+.page { max-width: none; padding: 28px 24px 48px; }
+.titre { font-size: 28px; margin: 0 0 6px; line-height: 1.2; }
+.sous-titre { margin: 0 0 22px; color: var(--doux); font-size: 17px; }
+
+.vignettes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.vignettes--une { grid-template-columns: 1fr; }
+.vignette { padding: 20px 22px; background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; }
+.vignette--active { border-color: var(--bleu); box-shadow: inset 0 3px 0 var(--bleu); padding: 22px 26px 26px; }
+.vignette h2 { margin: 0 0 4px; font-size: 26px; line-height: 1.2; }
+.niveau { margin: 0 0 16px; color: var(--doux); font-size: 14px; }
+.code-label { display: block; margin-bottom: 6px; font-size: 14px; color: var(--doux); }
+.champ-ligne { display: flex; gap: 8px; max-width: 360px; }
+.input {
+  flex: 1; min-width: 0; padding: 9px 12px; background: var(--fond); color: var(--texte);
+  border: 1px solid var(--bord); border-radius: 6px; font: inherit;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.input:focus { outline: 2px solid var(--bleu); outline-offset: 1px; }
+.btn {
+  padding: 9px 16px; background: var(--bleu); border: 1px solid var(--bleu); border-radius: 6px;
+  color: #0f1116; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer;
+  white-space: nowrap; text-decoration: none; display: inline-block;
+}
+.btn:hover { background: #95b5ff; }
+.btn--secondaire { background: transparent; color: var(--bleu); }
+.btn--secondaire:hover { background: rgba(122,162,255,.1); }
+.erreur { color: var(--rouge); font-size: 14px; margin: 8px 0 0; }
+.erreur:empty { display: none; }
+
+/* Espace d'une classe */
+.espace-barre { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.lien { background: none; border: 0; padding: 0; color: var(--bleu); font: inherit; font-size: 14px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.lien:hover { color: #fff; }
+.routines { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
+.routine { background: var(--panneau-2); border: 1px solid var(--bord); border-radius: 12px; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
+.routine h3 { margin: 0; font-size: 22px; }
+.routine p { margin: 0; color: var(--doux); }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stat { background: var(--panneau); border: 1px solid var(--bord); border-radius: 10px; padding: 10px 12px; text-align: center; }
+.stat b { display: block; font-size: 20px; color: var(--vert); }
+.stat span { font-size: 12px; color: var(--doux); }
+details { border: 1px solid var(--bord); border-radius: 10px; padding: 10px 14px; }
+summary { cursor: pointer; font-weight: 700; color: var(--bleu); }
+details ol { margin: 10px 0 0; padding-left: 22px; color: var(--doux); font-size: 15px; columns: 2; column-gap: 28px; }
+details li { padding: 2px 0; break-inside: avoid; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: auto; }
+
+.pied { margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--bord); color: var(--doux); font-size: 14px; }
+
+@media (max-width: 900px) {
+  .vignettes, .routines { grid-template-columns: 1fr; }
+  details ol { columns: 1; }
+  .nav-links a, .nav-links button { margin-left: 0; margin-right: 16px; }
+}
+
+.jour-choix { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.jour-choix .code-label { margin: 0; }
+.select { flex: 0 0 auto; text-transform: none; letter-spacing: 0; }

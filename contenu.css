@@ -1,0 +1,65 @@
+/* Mise en forme du contenu des séances (cadres, tableaux, arbres, figures, code Python).
+   Reprise des styles des pages interactives, avec la palette sombre de MathSite. */
+:root {
+  --surface: #161a25; --surface-2: #1e2331; --line: #2c3245;
+  --ink: #e8eaf2; --ink-2: #b3b9cd; --ink-3: #868da6;
+  --blue: #93a8ff; --blue-bg: #1b2448; --red: #ff8d7a; --red-bg: #371d1a;
+  --green: #74d3a5; --green-bg: #142e27; --amber: #f0b84f; --amber-bg: #31260f;
+  --violet: #c5a8ff; --violet-bg: #2a2140;
+  --font-display: Inter, Arial, sans-serif; --font-body: Inter, Arial, sans-serif;
+  --font-mono: ui-monospace, Menlo, Consolas, monospace;
+}
+.content p { margin: 0 0 14px; }
+.content ul, .content ol { margin: 0 0 14px; padding-left: 1.4em; }
+.content li { margin: 3px 0; }
+.content li > p { margin: 0; }
+.content strong { font-weight: 700; }
+.content code { font-family: var(--font-mono); font-size: .86em; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+.content .tex-d { margin: 10px 0 16px; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+.content table { border-collapse: collapse; font-variant-numeric: tabular-nums; background: var(--surface); }
+.content th, .content td { border: 1px solid var(--line); padding: 5px 12px; text-align: center; white-space: nowrap; }
+.content th { background: var(--surface-2); font-weight: 600; font-size: 15px; }
+.content td:first-child, .content th:first-child { text-align: left; }
+.tbl { overflow-x: auto; margin: 4px 0 16px; }
+pre.code { font-family: var(--font-mono); font-size: 14px; line-height: 1.55; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto; margin: 6px 0 16px; }
+pre.code code { background: none; padding: 0; font-size: inherit; }
+.py-k { color: var(--violet); font-weight: 600; }
+.py-s { color: var(--green); }
+.py-n { color: var(--amber); }
+.py-c { color: var(--ink-3); font-style: italic; }
+.box { border-radius: 12px; padding: 12px 14px 2px; margin: 0 0 16px; background: var(--surface); border: 1px solid var(--line); }
+.box-h { font-weight: 700; font-size: 13.5px; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 6px; }
+.box-def, .box-prop { background: var(--blue-bg); border-color: transparent; }
+.box-def .box-h, .box-prop .box-h { color: var(--blue); }
+.box-methode, .box-retenir { background: var(--green-bg); border-color: transparent; }
+.box-methode .box-h, .box-retenir .box-h { color: var(--green); }
+.box-attention { background: var(--amber-bg); border-color: transparent; }
+.box-attention .box-h { color: var(--amber); }
+.box-exemple .box-h { color: var(--ink-2); }
+.box-info, .box-histoire { background: var(--violet-bg); border-color: transparent; }
+.box-info .box-h, .box-histoire .box-h { color: var(--violet); }
+.box-python { background: var(--surface-2); }
+.fig { margin: 6px 0 18px; overflow-x: auto; }
+.fig svg { max-width: 100%; height: auto; display: block; }
+.fig figcaption { font-size: 14px; color: var(--ink-3); margin-top: 4px; }
+.t-edge { stroke: var(--ink-3); stroke-width: 1.4; fill: none; }
+.t-root { fill: var(--ink); }
+.t-node { font: 600 16px var(--font-body); fill: var(--ink); text-anchor: middle; }
+.t-prob { font: 600 13px var(--font-mono); fill: var(--blue); text-anchor: middle; paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+.t-annot { font: 13px var(--font-mono); fill: var(--ink-2); }
+.box .t-prob { stroke: var(--blue-bg); }
+.box-methode .t-prob, .box-retenir .t-prob { stroke: var(--green-bg); }
+.v-univ { fill: var(--surface); stroke: var(--ink-3); stroke-width: 1.2; }
+.v-circ { fill: none; stroke: var(--ink); stroke-width: 1.6; }
+.v-shade { fill: var(--blue); fill-opacity: .2; }
+.v-name { font: 700 16px var(--font-display); fill: var(--ink); }
+.v-univ-t { font: italic 15px var(--font-body); fill: var(--ink-2); }
+.v-num { font: 600 16px var(--font-mono); fill: var(--ink); text-anchor: middle; }
+.b-bar { fill: var(--blue); fill-opacity: .85; }
+.b-axis { stroke: var(--ink-3); stroke-width: 1.2; }
+.b-lab, .b-val, .b-axe { font: 12px var(--font-mono); fill: var(--ink-2); text-anchor: middle; }
+.chain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 6px 0 18px; }
+.chain .node { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; text-align: center; line-height: 1.25; min-width: 0; }
+.chain .node b { display: block; font-weight: 600; font-size: 15px; }
+.chain .node span { display: block; font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+.chain .arr { color: var(--ink-3); font-family: var(--font-mono); }
