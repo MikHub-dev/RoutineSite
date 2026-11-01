@@ -99,7 +99,7 @@ function ajouterJour(routine, code, n) {
 // ---------- Suivi des jours (Worker « routinesite-suivi ») ----------
 // Adresse du Worker, à renseigner après son déploiement (voir worker/LISEZMOI.md),
 // par exemple "https://routinesite-suivi.mon-compte.workers.dev". Vide : suivi local seulement.
-const URL_SUIVI = "";
+const URL_SUIVI = "https://routinesite-suivi.mikhub-dev.workers.dev";
 const CLE_ATTENTE = "routinesite:attente";
 
 async function appelerSuivi(chemin, corps) {
