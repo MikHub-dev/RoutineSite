@@ -6,162 +6,319 @@
 <title>RoutineSite · 30 minutes par jour</title>
 <meta name="description" content="Un rituel de 30 minutes par jour : deux parcours de 100 jours, Probabilités et Technologie numérique.">
 <style>
-  :root {
-    --bg: #f7f5f0;
-    --surface: #ffffff;
-    --ink: #1d2433;
-    --muted: #5d6677;
-    --line: #e3dfd5;
-    --proba: #3b5bdb;
-    --proba-soft: #e7ecfd;
-    --techno: #0b8a6e;
-    --techno-soft: #def4ee;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #14171f;
-      --surface: #1c202b;
-      --ink: #eceff5;
-      --muted: #a2abbd;
-      --line: #2c3242;
-      --proba: #8aa2ff;
-      --proba-soft: #22294a;
-      --techno: #4fd1b1;
-      --techno-soft: #16352f;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  }
-  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
-  header { padding: 56px 0 28px; }
-  .kicker { color: var(--muted); font-size: 14px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 8px; }
-  h1 { font-size: clamp(32px, 6vw, 52px); line-height: 1.1; margin: 0 0 14px; }
-  .lead { color: var(--muted); font-size: 18px; max-width: 640px; margin: 0; }
-  .method {
-    display: flex; flex-wrap: wrap; gap: 10px; margin: 24px 0 0; padding: 0; list-style: none;
-  }
-  .method li {
-    background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
-    padding: 6px 14px; font-size: 14px;
-  }
-  .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); padding: 12px 0 40px; }
-  .card {
-    background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
-    padding: 28px; display: flex; flex-direction: column; gap: 16px;
-    border-top: 6px solid var(--accent);
-  }
-  .card.proba { --accent: var(--proba); --soft: var(--proba-soft); }
-  .card.techno { --accent: var(--techno); --soft: var(--techno-soft); }
-  .card h2 { margin: 0; font-size: 28px; }
-  .icon {
-    width: 52px; height: 52px; border-radius: 14px; background: var(--soft); color: var(--accent);
-    display: grid; place-items: center; font-size: 26px; font-weight: 700;
-  }
-  .card p { margin: 0; color: var(--muted); }
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-  .stat { background: var(--soft); border-radius: 12px; padding: 10px 12px; text-align: center; }
-  .stat b { display: block; font-size: 22px; color: var(--accent); }
-  .stat span { font-size: 12px; color: var(--muted); }
-  details { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
-  summary { cursor: pointer; font-weight: 600; }
-  details ol { margin: 10px 0 0; padding-left: 22px; color: var(--muted); font-size: 15px; }
-  details li { padding: 2px 0; }
-  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; }
-  .btn {
-    display: inline-block; padding: 11px 18px; border-radius: 10px; font-weight: 600;
-    text-decoration: none; border: 2px solid var(--accent);
-  }
-  .btn.primary { background: var(--accent); color: #fff; }
-  @media (prefers-color-scheme: dark) { .btn.primary { color: #10131a; } }
-  .btn.secondary { color: var(--accent); background: transparent; }
-  .btn:hover, .btn:focus-visible { filter: brightness(1.08); outline: 3px solid var(--soft); }
-  footer { border-top: 1px solid var(--line); padding: 22px 0 40px; color: var(--muted); font-size: 14px; }
-  footer a { color: inherit; }
+/* Même charte que MathSite : fond #0f1116, panneaux #1a1d24, bordures #2a2d35, bleu #7aa2ff. */
+:root {
+  --fond: #0f1116;
+  --barre: #1a1d24;
+  --panneau: #1a1d24;
+  --panneau-2: #151820;
+  --bord: #2a2d35;
+  --texte: #e6e6e6;
+  --doux: #9aa3b2;
+  --bleu: #7aa2ff;
+  --vert: #5fc98a;
+  --rouge: #ff6b6b;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Inter, Arial, sans-serif;
+  background: var(--fond);
+  color: var(--texte);
+  line-height: 1.55;
+}
+
+/* Barre de navigation */
+#navbar {
+  background: var(--barre);
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--bord);
+}
+.nav-left { display: flex; align-items: center; gap: 14px; }
+.logo-mark {
+  width: 48px; height: 48px; border-radius: 12px;
+  display: grid; place-items: center;
+  background: var(--panneau-2); border: 1px solid var(--bord);
+  color: var(--bleu); font-weight: 800; font-size: 20px; letter-spacing: -.02em;
+}
+.logo-text { display: flex; flex-direction: column; }
+.logo { font-size: 22px; font-weight: 700; color: var(--bleu); line-height: 1.2; }
+.logo-tagline { font-size: 13px; font-style: italic; color: var(--rouge); letter-spacing: .02em; }
+.nav-links { display: flex; align-items: center; flex-wrap: wrap; }
+.nav-links a, .nav-links button {
+  color: var(--bleu); font: inherit; font-weight: 700; font-size: 15px;
+  margin-left: 20px; text-decoration: none; background: none; border: 0; padding: 0; cursor: pointer;
+}
+.nav-links a:hover, .nav-links button:hover { color: #fff; }
+.nav-links a.active { color: #fff; border-bottom: 2px solid var(--bleu); padding-bottom: 4px; }
+.nav-links [hidden] { display: none; }
+
+/* Page : occupe toute la largeur */
+.page { max-width: none; padding: 28px 24px 48px; }
+.titre { font-size: 28px; margin: 0 0 6px; line-height: 1.2; }
+.sous-titre { margin: 0 0 22px; color: var(--doux); font-size: 17px; }
+
+.vignettes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.vignettes--une { grid-template-columns: 1fr; }
+.vignette { padding: 20px 22px; background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; }
+.vignette--active { border-color: var(--bleu); box-shadow: inset 0 3px 0 var(--bleu); padding: 22px 26px 26px; }
+.vignette h2 { margin: 0 0 4px; font-size: 26px; line-height: 1.2; }
+.niveau { margin: 0 0 16px; color: var(--doux); font-size: 14px; }
+.code-label { display: block; margin-bottom: 6px; font-size: 14px; color: var(--doux); }
+.champ-ligne { display: flex; gap: 8px; max-width: 360px; }
+.input {
+  flex: 1; min-width: 0; padding: 9px 12px; background: var(--fond); color: var(--texte);
+  border: 1px solid var(--bord); border-radius: 6px; font: inherit;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.input:focus { outline: 2px solid var(--bleu); outline-offset: 1px; }
+.btn {
+  padding: 9px 16px; background: var(--bleu); border: 1px solid var(--bleu); border-radius: 6px;
+  color: #0f1116; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer;
+  white-space: nowrap; text-decoration: none; display: inline-block;
+}
+.btn:hover { background: #95b5ff; }
+.btn--secondaire { background: transparent; color: var(--bleu); }
+.btn--secondaire:hover { background: rgba(122,162,255,.1); }
+.erreur { color: var(--rouge); font-size: 14px; margin: 8px 0 0; }
+.erreur:empty { display: none; }
+
+/* Espace d'une classe */
+.espace-barre { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.lien { background: none; border: 0; padding: 0; color: var(--bleu); font: inherit; font-size: 14px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.lien:hover { color: #fff; }
+.routines { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
+.routine { background: var(--panneau-2); border: 1px solid var(--bord); border-radius: 12px; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
+.routine h3 { margin: 0; font-size: 22px; }
+.routine p { margin: 0; color: var(--doux); }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stat { background: var(--panneau); border: 1px solid var(--bord); border-radius: 10px; padding: 10px 12px; text-align: center; }
+.stat b { display: block; font-size: 20px; color: var(--vert); }
+.stat span { font-size: 12px; color: var(--doux); }
+details { border: 1px solid var(--bord); border-radius: 10px; padding: 10px 14px; }
+summary { cursor: pointer; font-weight: 700; color: var(--bleu); }
+details ol { margin: 10px 0 0; padding-left: 22px; color: var(--doux); font-size: 15px; columns: 2; column-gap: 28px; }
+details li { padding: 2px 0; break-inside: avoid; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: auto; }
+
+.pied { margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--bord); color: var(--doux); font-size: 14px; }
+
+@media (max-width: 900px) {
+  .vignettes, .routines { grid-template-columns: 1fr; }
+  details ol { columns: 1; }
+  .nav-links a, .nav-links button { margin-left: 0; margin-right: 16px; }
+}
 </style>
 </head>
 <body>
-<header class="wrap">
-  <p class="kicker">Rituel quotidien</p>
-  <h1>30 minutes par jour</h1>
-  <p class="lead">Deux parcours de 100 séances pour progresser pas à pas, du collège aux bases du supérieur. Chaque jour, un court cours puis trois exercices corrigés.</p>
-  <ul class="method" aria-label="Déroulé d'une séance">
-    <li>≈ 12 min · apprentissage</li>
-    <li>≈ 18 min · 3 exercices corrigés</li>
-    <li>100 jours · 50 heures par parcours</li>
-  </ul>
+
+<header id="navbar">
+  <div class="nav-left">
+    <div class="logo-mark" aria-hidden="true">30'</div>
+    <div class="logo-text">
+      <span class="logo">RoutineSite</span>
+      <span class="logo-tagline">30 minutes par jour</span>
+    </div>
+  </div>
+  <nav class="nav-links" aria-label="Navigation">
+    <a href="#" id="nav-accueil" class="active">Accueil</a>
+    <button type="button" id="nav-quitter" hidden>Changer de code</button>
+  </nav>
 </header>
 
-<main class="wrap">
-  <div class="grid">
+<main class="page" id="contenu"></main>
 
-    <article class="card proba">
-      <div class="icon" aria-hidden="true">P</div>
-      <h2>Probabilités en 100 jours</h2>
-      <p>Du langage du hasard à la loi binomiale et à la loi des grands nombres, en suivant les programmes de lycée de la rentrée 2026.</p>
-      <div class="stats">
-        <div class="stat"><b>100</b><span>séances</span></div>
-        <div class="stat"><b>10</b><span>modules</span></div>
-        <div class="stat"><b>2nde → Tle</b><span>niveaux</span></div>
-      </div>
-      <details>
-        <summary>Voir les 10 modules</summary>
-        <ol>
-          <li>Le langage des probabilités</li>
-          <li>Combiner des événements</li>
-          <li>Expériences à plusieurs épreuves</li>
-          <li>Fréquences, simulation, tableaux croisés</li>
-          <li>Probabilités conditionnelles</li>
-          <li>Indépendance et répétition</li>
-          <li>Variables aléatoires</li>
-          <li>Dénombrement</li>
-          <li>Loi binomiale</li>
-          <li>Sommes et grands nombres</li>
-        </ol>
-      </details>
-      <div class="actions">
-        <a class="btn primary" href="https://claude.ai/artifact/Ur3SdBLbHcHj4siz3WqoQD">Ouvrir la routine</a>
-        <a class="btn secondary" href="probabilites-100-jours-progression.md">Progression (texte)</a>
-      </div>
-    </article>
+<script>
+// ---------- Configuration ----------
+// Empreintes SHA-256 des codes, calculées comme dans MathSite : sel + classe + ":" + code.
+// Les codes eux-mêmes ne figurent pas dans la page (ce sont les mêmes que sur MathSite).
+const SEL = "mathsite:";
+const CLASSES = [
+  { key: "5e", nom: "5e", niveau: "Collège" },
+  { key: "seconde", nom: "Seconde", niveau: "Lycée" }
+];
+const EMPREINTES = {
+  "5e": ["489c1aecd78964bf6e285c1425430f40b6a14f6cc4ba1f9ffd2bc2f48b203a24"],
+  "seconde": ["8f29042f5b26a90537a0cec56715742c14a0e793fd534ed7b5478796565bc56f"]
+};
+const STOCKAGE = "routinesite:code";
 
-    <article class="card techno">
-      <div class="icon" aria-hidden="true">&lt;/&gt;</div>
-      <h2>Technologie numérique en 100 jours</h2>
-      <p>De l'ordinateur à l'intelligence artificielle : SNT de seconde avec Python, puis NSI de première et de terminale et bases du supérieur.</p>
-      <div class="stats">
-        <div class="stat"><b>100</b><span>séances</span></div>
-        <div class="stat"><b>10</b><span>modules</span></div>
-        <div class="stat"><b>Collège → Sup</b><span>niveaux</span></div>
-      </div>
-      <details>
-        <summary>Voir les 10 modules</summary>
-        <ol>
-          <li>L'ordinateur</li>
-          <li>Coder l'information</li>
-          <li>Réseaux et Internet</li>
-          <li>Le Web</li>
-          <li>Données et objets connectés</li>
-          <li>Transmission et infrastructures</li>
-          <li>Cybersécurité</li>
-          <li>Au cœur de la machine</li>
-          <li>Intelligence artificielle</li>
-          <li>Perspectives et synthèse</li>
-        </ol>
-      </details>
-      <div class="actions">
-        <a class="btn primary" href="https://claude.ai/artifact/7ZhnrciXoSGr1JcUopPrJj">Ouvrir la routine</a>
-        <a class="btn secondary" href="technologie-numerique-100-jours-progression.md">Progression (texte)</a>
-      </div>
-    </article>
+const ROUTINES = [
+  {
+    titre: "Probabilités en 100 jours",
+    texte: "Du langage du hasard à la loi binomiale et à la loi des grands nombres, en suivant les programmes de lycée de la rentrée 2026.",
+    stats: [["100", "séances"], ["10", "modules"], ["2nde → Tle", "niveaux"]],
+    modules: ["Le langage des probabilités", "Combiner des événements", "Expériences à plusieurs épreuves",
+      "Fréquences, simulation, tableaux croisés", "Probabilités conditionnelles", "Indépendance et répétition",
+      "Variables aléatoires", "Dénombrement", "Loi binomiale", "Sommes et grands nombres"],
+    lien: "https://claude.ai/artifact/Ur3SdBLbHcHj4siz3WqoQD",
+    texteLien: "probabilites-100-jours-progression.md"
+  },
+  {
+    titre: "Technologie numérique en 100 jours",
+    texte: "De l'ordinateur à l'intelligence artificielle : SNT de seconde avec Python, puis NSI de première et de terminale et bases du supérieur.",
+    stats: [["100", "séances"], ["10", "modules"], ["Collège → Sup", "niveaux"]],
+    modules: ["L'ordinateur", "Coder l'information", "Réseaux et Internet", "Le Web", "Données et objets connectés",
+      "Transmission et infrastructures", "Cybersécurité", "Au cœur de la machine", "Intelligence artificielle",
+      "Perspectives et synthèse"],
+    lien: "https://claude.ai/artifact/7ZhnrciXoSGr1JcUopPrJj",
+    texteLien: "technologie-numerique-100-jours-progression.md"
+  }
+];
 
-  </div>
-</main>
+// ---------- Codes ----------
+const normaliser = s => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
-<footer>
-  <div class="wrap">RoutineSite · un rituel de 30 minutes par jour sur un sujet à approfondir.</div>
-</footer>
+function sha256(message) { // SHA-256 en JavaScript pur, si crypto.subtle est indisponible (file://)
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  const H = [], K = [];
+  const frac = x => ((x - Math.floor(x)) * 4294967296) >>> 0;
+  const premier = p => { for (let d = 2; d * d <= p; d++) if (p % d === 0) return false; return true; };
+  for (let n = 2, i = 0; i < 64; n++) {
+    if (!premier(n)) continue;
+    if (i < 8) H[i] = frac(Math.pow(n, 1 / 2));
+    K[i++] = frac(Math.pow(n, 1 / 3));
+  }
+  const o = Array.from(new TextEncoder().encode(message));
+  const bits = o.length * 8;
+  o.push(0x80);
+  while (o.length % 64 !== 56) o.push(0);
+  const haut = Math.floor(bits / 4294967296), bas = bits >>> 0;
+  for (let i = 3; i >= 0; i--) o.push((haut >>> (i * 8)) & 255);
+  for (let i = 3; i >= 0; i--) o.push((bas >>> (i * 8)) & 255);
+  for (let off = 0; off < o.length; off += 64) {
+    const w = new Array(64);
+    for (let i = 0; i < 16; i++) { const j = off + 4 * i; w[i] = ((o[j] << 24) | (o[j + 1] << 16) | (o[j + 2] << 8) | o[j + 3]) >>> 0; }
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
+      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });
+  }
+  return H.map(x => x.toString(16).padStart(8, "0")).join("");
+}
+async function empreinte(code, classe) {
+  const texte = `${SEL}${classe}:${normaliser(code)}`;
+  if (window.crypto && crypto.subtle) {
+    try {
+      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(texte));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+    } catch (e) { /* repli ci-dessous */ }
+  }
+  return sha256(texte);
+}
+async function codeValable(classe, code) {
+  return (EMPREINTES[classe] || []).includes(await empreinte(code, classe));
+}
+async function classeDuCode(code) {
+  for (const k of CLASSES) if (await codeValable(k.key, code)) return k.key;
+  return null;
+}
+const nomClasse = key => (CLASSES.find(k => k.key === key) || {}).nom || key;
+
+// Une seule session mémorisée : { classe, code }.
+function lireSession() {
+  try { return JSON.parse(localStorage.getItem(STOCKAGE)) || null; } catch (e) { return null; }
+}
+function ecrireSession(s) {
+  try { s ? localStorage.setItem(STOCKAGE, JSON.stringify(s)) : localStorage.removeItem(STOCKAGE); } catch (e) {}
+}
+
+// ---------- Affichage ----------
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function vignetteHtml(k) {
+  return `<section class="vignette">
+    <h2>${esc(k.nom)}</h2>
+    <p class="niveau">${esc(k.niveau)}</p>
+    <label class="code-label" for="code-${k.key}">Mon code</label>
+    <form class="champ-ligne" onsubmit="entrer('${k.key}'); return false;">
+      <input class="input" id="code-${k.key}" type="text" placeholder="VOTRE CODE" autocomplete="off" autocapitalize="characters" spellcheck="false">
+      <button class="btn" type="submit">Entrer</button>
+    </form>
+    <p class="erreur" id="erreur-${k.key}" role="alert"></p>
+  </section>`;
+}
+function routineHtml(r) {
+  return `<article class="routine">
+    <h3>${esc(r.titre)}</h3>
+    <p>${esc(r.texte)}</p>
+    <div class="stats">${r.stats.map(([v, l]) => `<div class="stat"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("")}</div>
+    <details>
+      <summary>Voir les 10 modules</summary>
+      <ol>${r.modules.map(m => `<li>${esc(m)}</li>`).join("")}</ol>
+    </details>
+    <div class="actions">
+      <a class="btn" href="${esc(r.lien)}">Ouvrir la routine</a>
+      <a class="btn btn--secondaire" href="${esc(r.texteLien)}">Progression (texte)</a>
+    </div>
+  </article>`;
+}
+
+async function afficher() {
+  const c = document.getElementById("contenu");
+  const quitter = document.getElementById("nav-quitter");
+  let s = lireSession();
+  if (s && !(await codeValable(s.classe, s.code))) { ecrireSession(null); s = null; }
+  quitter.hidden = !s;
+  if (s) {
+    c.innerHTML = `<h1 class="titre">Routines</h1>
+      <p class="sous-titre">Un rituel de 30 minutes par jour : ≈ 12 min d'apprentissage, puis 3 exercices corrigés.</p>
+      <div class="vignettes vignettes--une">
+        <section class="vignette vignette--active">
+          <div class="espace-barre">
+            <h2>Mon espace · ${esc(nomClasse(s.classe))}</h2>
+            <button type="button" class="lien" onclick="sortir()">Changer de code</button>
+          </div>
+          <p class="niveau">Deux parcours de 100 séances, 50 heures chacun.</p>
+          <div class="routines">${ROUTINES.map(routineHtml).join("")}</div>
+        </section>
+      </div>`;
+  } else {
+    c.innerHTML = `<h1 class="titre">Routines</h1>
+      <p class="sous-titre">Chaque classe a son espace : entrez votre code dans la vignette de votre classe.</p>
+      <div class="vignettes">${CLASSES.map(vignetteHtml).join("")}</div>`;
+  }
+  c.insertAdjacentHTML("beforeend", `<footer class="pied">RoutineSite · un rituel de 30 minutes par jour sur un sujet à approfondir.</footer>`);
+}
+
+async function entrer(classe) {
+  const input = document.getElementById(`code-${classe}`);
+  const err = document.getElementById(`erreur-${classe}`);
+  const code = normaliser(input.value);
+  if (code.length < 6) {
+    err.textContent = "Le code comporte au moins 6 caractères : saisissez celui qui vous a été remis.";
+    input.focus();
+    return;
+  }
+  if (!(await codeValable(classe, code))) {
+    const autre = await classeDuCode(code);
+    err.textContent = autre
+      ? `Ce code est celui d'un élève de ${nomClasse(autre)} : utilisez la vignette ${nomClasse(autre)}.`
+      : "Ce code ne correspond à aucun élève de cette classe. Vérifiez-le.";
+    input.focus();
+    return;
+  }
+  ecrireSession({ classe, code });
+  afficher();
+}
+function sortir() { ecrireSession(null); afficher(); }
+
+document.getElementById("nav-quitter").addEventListener("click", sortir);
+document.getElementById("nav-accueil").addEventListener("click", e => { e.preventDefault(); afficher(); });
+afficher();
+</script>
 </body>
 </html>
