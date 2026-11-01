@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Les 100 séances · RoutineSite</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .module { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 16px; align-items: center;
+    background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; padding: 14px 18px; margin-bottom: 12px; }
+  .module h2 { margin: 0; font-size: 17px; }
+  .module h2 small { display: block; color: var(--doux); font-weight: 400; font-size: 13px; margin-top: 2px; }
+  .grille { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px; }
+  .case { display: block; padding: 10px 0; text-align: center; border-radius: 8px; border: 1px solid var(--bord);
+    background: var(--panneau-2); color: var(--texte); text-decoration: none; font-size: 15px; }
+  .case:hover, .case:focus-visible { border-color: var(--bleu); outline: none; }
+  .case.fait { background: #143a2a; border-color: var(--vert); color: var(--vert); font-weight: 700; }
+  .case.bilan { border-style: dashed; }
+  .case.prochain { outline: 2px solid var(--bleu); outline-offset: 1px; }
+  .barre { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+  @media (max-width: 760px) { .module { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header id="navbar">
+  <div class="nav-left">
+    <div class="logo-mark" aria-hidden="true">30'</div>
+    <div class="logo-text">
+      <span class="logo">RoutineSite</span>
+      <span class="logo-tagline">30 minutes par jour</span>
+    </div>
+  </div>
+  <nav class="nav-links" aria-label="Navigation">
+    <a href="index.html">Accueil</a>
+  </nav>
+</header>
+
+<main class="page" id="contenu"><p class="sous-titre">Chargement…</p></main>
+
+<script src="commun.js"></script>
+<script>
+const ROUTINES = {
+  probabilites: { nom: "Probabilités en 100 jours", fichier: "data/probabilites.json" },
+  technologie: { nom: "Technologie numérique en 100 jours", fichier: "data/technologie.json" }
+};
+
+(async function () {
+  const c = document.getElementById("contenu");
+  const session = await sessionValide();
+  if (!session) { location.replace("index.html"); return; }
+  const cle = ROUTINES[new URLSearchParams(location.search).get("r")] ? new URLSearchParams(location.search).get("r") : null;
+  if (!cle) { c.innerHTML = `<p class="erreur">Routine inconnue. <a class="lien" href="index.html">Retour</a></p>`; return; }
+  let donnees;
+  try { donnees = await (await fetch(ROUTINES[cle].fichier)).json(); }
+  catch (e) { c.innerHTML = `<p class="erreur">Impossible de charger les séances. <a class="lien" href="index.html">Retour</a></p>`; return; }
+
+  await synchroniserJours(session);
+  const faits = lireJours(cle, session.code);
+  let prochain = 1;
+  while (faits.includes(prochain) && prochain < 100) prochain++;
+
+  const modules = donnees.modules.map(m => {
+    const jours = donnees.jours.filter(j => j.module === m.id);
+    const nb = jours.filter(j => faits.includes(j.n)).length;
+    return `<section class="module">
+      <h2>${esc(m.titre)}<small>${esc(m.niveau)} · ${nb}/${jours.length}</small></h2>
+      <div class="grille">${jours.map(j => `<a class="case${faits.includes(j.n) ? " fait" : ""}${j.n % 10 === 0 ? " bilan" : ""}${j.n === prochain ? " prochain" : ""}"
+        href="jour.html?r=${cle}&j=${j.n}" title="${esc("Jour " + j.n + " · " + (j.titreTxt || j.titre))}">${j.n}</a>`).join("")}</div>
+    </section>`;
+  }).join("");
+
+  document.title = `Les 100 séances · ${ROUTINES[cle].nom} · RoutineSite`;
+  c.innerHTML = `
+    <p class="fil" style="color:var(--doux);font-size:14px"><a class="lien" href="index.html">← Mon espace</a> · ${esc(nomClasse(session.classe))}</p>
+    <h1 class="titre">${esc(ROUTINES[cle].nom)}</h1>
+    <p class="sous-titre">Cliquez sur un jour pour ouvrir la séance. En vert : jours terminés. Contour pointillé : séance de bilan.</p>
+    <div class="barre"><a class="btn" href="jour.html?r=${cle}&j=${prochain}">Faire le jour ${prochain}</a>
+      <span class="sous-titre" style="margin:0">${faits.length}/100 jours terminés</span></div>
+    ${modules}`;
+})();
+</script>
+</body>
+</html>

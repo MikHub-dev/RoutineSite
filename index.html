@@ -36,7 +36,6 @@ const ROUTINES = [
     modules: ["Le langage des probabilités", "Combiner des événements", "Expériences à plusieurs épreuves",
       "Fréquences, simulation, tableaux croisés", "Probabilités conditionnelles", "Indépendance et répétition",
       "Variables aléatoires", "Dénombrement", "Loi binomiale", "Sommes et grands nombres"],
-    lien: "https://claude.ai/artifact/Ur3SdBLbHcHj4siz3WqoQD",
     texteLien: "probabilites-100-jours-progression.md"
   },
   {
@@ -47,7 +46,6 @@ const ROUTINES = [
     modules: ["L'ordinateur", "Coder l'information", "Réseaux et Internet", "Le Web", "Données et objets connectés",
       "Transmission et infrastructures", "Cybersécurité", "Au cœur de la machine", "Intelligence artificielle",
       "Perspectives et synthèse"],
-    lien: "https://claude.ai/artifact/7ZhnrciXoSGr1JcUopPrJj",
     texteLien: "technologie-numerique-100-jours-progression.md"
   }
 ];
@@ -89,7 +87,7 @@ function routineHtml(r, session) {
       <select class="input select" id="sel-${r.cle}" onchange="location.href='jour.html?r=${r.cle}&j='+this.value">${options}</select>
     </div>
     <div class="actions">
-      <a class="btn btn--secondaire" href="${esc(r.lien)}">Page interactive</a>
+      <a class="btn btn--secondaire" href="seances.html?r=${r.cle}">Les 100 séances</a>
       <a class="btn btn--secondaire" href="${esc(r.texteLien)}">Progression (texte)</a>
     </div>
   </article>`;
