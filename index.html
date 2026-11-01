@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoutineSite · 30 minutes par jour</title>
+<meta name="description" content="Un rituel de 30 minutes par jour : deux parcours de 100 jours, Probabilités et Technologie numérique.">
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --surface: #ffffff;
+    --ink: #1d2433;
+    --muted: #5d6677;
+    --line: #e3dfd5;
+    --proba: #3b5bdb;
+    --proba-soft: #e7ecfd;
+    --techno: #0b8a6e;
+    --techno-soft: #def4ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171f;
+      --surface: #1c202b;
+      --ink: #eceff5;
+      --muted: #a2abbd;
+      --line: #2c3242;
+      --proba: #8aa2ff;
+      --proba-soft: #22294a;
+      --techno: #4fd1b1;
+      --techno-soft: #16352f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+  header { padding: 56px 0 28px; }
+  .kicker { color: var(--muted); font-size: 14px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 8px; }
+  h1 { font-size: clamp(32px, 6vw, 52px); line-height: 1.1; margin: 0 0 14px; }
+  .lead { color: var(--muted); font-size: 18px; max-width: 640px; margin: 0; }
+  .method {
+    display: flex; flex-wrap: wrap; gap: 10px; margin: 24px 0 0; padding: 0; list-style: none;
+  }
+  .method li {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 14px; font-size: 14px;
+  }
+  .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); padding: 12px 0 40px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+    padding: 28px; display: flex; flex-direction: column; gap: 16px;
+    border-top: 6px solid var(--accent);
+  }
+  .card.proba { --accent: var(--proba); --soft: var(--proba-soft); }
+  .card.techno { --accent: var(--techno); --soft: var(--techno-soft); }
+  .card h2 { margin: 0; font-size: 28px; }
+  .icon {
+    width: 52px; height: 52px; border-radius: 14px; background: var(--soft); color: var(--accent);
+    display: grid; place-items: center; font-size: 26px; font-weight: 700;
+  }
+  .card p { margin: 0; color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .stat { background: var(--soft); border-radius: 12px; padding: 10px 12px; text-align: center; }
+  .stat b { display: block; font-size: 22px; color: var(--accent); }
+  .stat span { font-size: 12px; color: var(--muted); }
+  details { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+  summary { cursor: pointer; font-weight: 600; }
+  details ol { margin: 10px 0 0; padding-left: 22px; color: var(--muted); font-size: 15px; }
+  details li { padding: 2px 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; }
+  .btn {
+    display: inline-block; padding: 11px 18px; border-radius: 10px; font-weight: 600;
+    text-decoration: none; border: 2px solid var(--accent);
+  }
+  .btn.primary { background: var(--accent); color: #fff; }
+  @media (prefers-color-scheme: dark) { .btn.primary { color: #10131a; } }
+  .btn.secondary { color: var(--accent); background: transparent; }
+  .btn:hover, .btn:focus-visible { filter: brightness(1.08); outline: 3px solid var(--soft); }
+  footer { border-top: 1px solid var(--line); padding: 22px 0 40px; color: var(--muted); font-size: 14px; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<header class="wrap">
+  <p class="kicker">Rituel quotidien</p>
+  <h1>30 minutes par jour</h1>
+  <p class="lead">Deux parcours de 100 séances pour progresser pas à pas, du collège aux bases du supérieur. Chaque jour, un court cours puis trois exercices corrigés.</p>
+  <ul class="method" aria-label="Déroulé d'une séance">
+    <li>≈ 12 min · apprentissage</li>
+    <li>≈ 18 min · 3 exercices corrigés</li>
+    <li>100 jours · 50 heures par parcours</li>
+  </ul>
+</header>
+
+<main class="wrap">
+  <div class="grid">
+
+    <article class="card proba">
+      <div class="icon" aria-hidden="true">P</div>
+      <h2>Probabilités en 100 jours</h2>
+      <p>Du langage du hasard à la loi binomiale et à la loi des grands nombres, en suivant les programmes de lycée de la rentrée 2026.</p>
+      <div class="stats">
+        <div class="stat"><b>100</b><span>séances</span></div>
+        <div class="stat"><b>10</b><span>modules</span></div>
+        <div class="stat"><b>2nde → Tle</b><span>niveaux</span></div>
+      </div>
+      <details>
+        <summary>Voir les 10 modules</summary>
+        <ol>
+          <li>Le langage des probabilités</li>
+          <li>Combiner des événements</li>
+          <li>Expériences à plusieurs épreuves</li>
+          <li>Fréquences, simulation, tableaux croisés</li>
+          <li>Probabilités conditionnelles</li>
+          <li>Indépendance et répétition</li>
+          <li>Variables aléatoires</li>
+          <li>Dénombrement</li>
+          <li>Loi binomiale</li>
+          <li>Sommes et grands nombres</li>
+        </ol>
+      </details>
+      <div class="actions">
+        <a class="btn primary" href="https://claude.ai/artifact/Ur3SdBLbHcHj4siz3WqoQD">Ouvrir la routine</a>
+        <a class="btn secondary" href="probabilites-100-jours-progression.md">Progression (texte)</a>
+      </div>
+    </article>
+
+    <article class="card techno">
+      <div class="icon" aria-hidden="true">&lt;/&gt;</div>
+      <h2>Technologie numérique en 100 jours</h2>
+      <p>De l'ordinateur à l'intelligence artificielle : SNT de seconde avec Python, puis NSI de première et de terminale et bases du supérieur.</p>
+      <div class="stats">
+        <div class="stat"><b>100</b><span>séances</span></div>
+        <div class="stat"><b>10</b><span>modules</span></div>
+        <div class="stat"><b>Collège → Sup</b><span>niveaux</span></div>
+      </div>
+      <details>
+        <summary>Voir les 10 modules</summary>
+        <ol>
+          <li>L'ordinateur</li>
+          <li>Coder l'information</li>
+          <li>Réseaux et Internet</li>
+          <li>Le Web</li>
+          <li>Données et objets connectés</li>
+          <li>Transmission et infrastructures</li>
+          <li>Cybersécurité</li>
+          <li>Au cœur de la machine</li>
+          <li>Intelligence artificielle</li>
+          <li>Perspectives et synthèse</li>
+        </ol>
+      </details>
+      <div class="actions">
+        <a class="btn primary" href="https://claude.ai/artifact/7ZhnrciXoSGr1JcUopPrJj">Ouvrir la routine</a>
+        <a class="btn secondary" href="technologie-numerique-100-jours-progression.md">Progression (texte)</a>
+      </div>
+    </article>
+
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">RoutineSite · un rituel de 30 minutes par jour sur un sujet à approfondir.</div>
+</footer>
+</body>
+</html>
