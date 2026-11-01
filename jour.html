@@ -171,7 +171,7 @@ function envoyer() {
   document.getElementById("secours").hidden = false;
   // Ouvre le logiciel de messagerie de l'élève avec le message prêt à envoyer.
   location.href = `mailto:${ADRESSE_ENSEIGNANT}?subject=${sujet}&body=${corps}`;
-  ajouterJour(cleRoutine, session.code, numero);
+  enregistrerJour(session, cleRoutine, numero);
   document.getElementById("etat").textContent = "✓ Jour validé sur cet appareil. Envoie le message qui vient de s'ouvrir : les corrigés sont affichés ci-dessous.";
   revelerCorriges();
 }
@@ -190,6 +190,7 @@ function envoyer() {
     c.innerHTML = `<p class="erreur">Impossible de charger la séance (ouvre le site depuis son adresse en ligne, pas depuis un fichier). <a class="lien" href="index.html">Retour</a></p>`;
     return;
   }
+  await synchroniserJours(session);
   document.title = `Jour ${numero} · ${ROUTINES[cleRoutine].court} · RoutineSite`;
   afficherJour();
   window.addEventListener("load", () => mathematiques(document.getElementById("contenu")));

@@ -109,3 +109,5 @@ details li { padding: 2px 0; break-inside: avoid; }
 .jour-choix { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .jour-choix .code-label { margin: 0; }
 .select { flex: 0 0 auto; text-transform: none; letter-spacing: 0; }
+
+.lien--discret { color: var(--doux); font-size: 13px; margin-left: 12px; }

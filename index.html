@@ -101,6 +101,7 @@ async function afficher() {
   let s = lireSession();
   if (s && !(await codeValable(s.classe, s.code))) { ecrireSession(null); s = null; }
   quitter.hidden = !s;
+  if (s) await synchroniserJours(s);
   if (s) {
     c.innerHTML = `<h1 class="titre">Routines</h1>
       <p class="sous-titre">Un rituel de 30 minutes par jour : ≈ 12 min d'apprentissage, puis 3 exercices corrigés.</p>
@@ -119,7 +120,7 @@ async function afficher() {
       <p class="sous-titre">Chaque classe a son espace : entrez votre code dans la vignette de votre classe.</p>
       <div class="vignettes">${CLASSES.map(vignetteHtml).join("")}</div>`;
   }
-  c.insertAdjacentHTML("beforeend", `<footer class="pied">RoutineSite · un rituel de 30 minutes par jour sur un sujet à approfondir.</footer>`);
+  c.insertAdjacentHTML("beforeend", `<footer class="pied">RoutineSite · un rituel de 30 minutes par jour sur un sujet à approfondir. <a class="lien lien--discret" href="enseignant.html">Espace enseignant</a></footer>`);
 }
 
 async function entrer(classe) {

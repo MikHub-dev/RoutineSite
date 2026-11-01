@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Espace enseignant · RoutineSite</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="style.css">
+<style>
+  .eleve { background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; padding: 18px 22px; margin-bottom: 18px; }
+  .eleve-tete { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .eleve h2 { margin: 0; font-size: 22px; letter-spacing: .04em; }
+  .parcours { margin-top: 14px; }
+  .parcours-tete { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .parcours h3 { margin: 0; font-size: 16px; }
+  .parcours h3 small { color: var(--doux); font-weight: 400; margin-left: 8px; }
+  .grille { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; max-width: 640px; }
+  .case {
+    padding: 6px 0; text-align: center; font-size: 13px; border-radius: 6px; border: 1px solid var(--bord);
+    background: var(--panneau-2); color: var(--doux); font-family: inherit;
+  }
+  .case.fait { background: #143a2a; border-color: var(--vert); color: var(--vert); font-weight: 700; cursor: pointer; }
+  .case.fait:hover, .case.fait:focus-visible { background: #3a1a1a; border-color: var(--rouge); color: var(--rouge); outline: none; }
+  .case.fait:hover::after, .case.fait:focus-visible::after { content: ""; }
+  .case:disabled { cursor: default; }
+  .aide { color: var(--doux); font-size: 14px; margin: 0 0 18px; }
+  .barre { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+  .message { color: var(--vert); font-size: 14px; margin: 0 0 12px; }
+  .message:empty { display: none; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<header id="navbar">
+  <div class="nav-left">
+    <div class="logo-mark" aria-hidden="true">30'</div>
+    <div class="logo-text">
+      <span class="logo">RoutineSite</span>
+      <span class="logo-tagline">Espace enseignant</span>
+    </div>
+  </div>
+  <nav class="nav-links" aria-label="Navigation">
+    <a href="index.html">Accueil</a>
+    <button type="button" id="quitter" hidden>Se déconnecter</button>
+  </nav>
+</header>
+
+<main class="page" id="contenu"></main>
+
+<script src="commun.js"></script>
+<script>
+const CLE_ADMIN = "routinesite:admin";
+const NOMS = { probabilites: "Probabilités en 100 jours", technologie: "Technologie numérique en 100 jours" };
+
+const lireMdp = () => { try { return sessionStorage.getItem(CLE_ADMIN) || ""; } catch (e) { return ""; } };
+const ecrireMdp = m => { try { m ? sessionStorage.setItem(CLE_ADMIN, m) : sessionStorage.removeItem(CLE_ADMIN); } catch (e) {} };
+const dateFr = iso => new Date(iso).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
+
+function pageConnexion(erreur) {
+  document.getElementById("quitter").hidden = true;
+  document.getElementById("contenu").innerHTML = `
+    <h1 class="titre">Espace enseignant</h1>
+    <p class="sous-titre">Suivi des jours faits par élève. Même mot de passe que l'espace enseignant de MathSite.</p>
+    <section class="vignette" style="max-width:520px">
+      <label class="code-label" for="mdp">Mot de passe</label>
+      <form class="champ-ligne" onsubmit="connecter(); return false;">
+        <input class="input" id="mdp" type="password" autocomplete="current-password" style="text-transform:none;letter-spacing:0">
+        <button class="btn" type="submit">Entrer</button>
+      </form>
+      <p class="erreur" id="erreur" role="alert">${esc(erreur || "")}</p>
+    </section>`;
+  const m = document.getElementById("mdp"); if (m) m.focus();
+}
+
+function pageNonConfiguree() {
+  document.getElementById("contenu").innerHTML = `
+    <h1 class="titre">Espace enseignant</h1>
+    <section class="vignette"><p>Le suivi n'est pas encore activé : le Worker n'est pas déployé ou son adresse n'est pas renseignée
+      (<code>URL_SUIVI</code> dans <code>commun.js</code>). Les étapes sont dans <code>worker/LISEZMOI.md</code>.</p></section>`;
+}
+
+async function connecter() {
+  const m = document.getElementById("mdp").value;
+  if (!m) return;
+  ecrireMdp(m);
+  await afficher();
+}
+
+async function afficher() {
+  if (!URL_SUIVI) return pageNonConfiguree();
+  const mdp = lireMdp();
+  if (!mdp) return pageConnexion();
+  let reponse;
+  try { reponse = await appelerSuivi("/admin/etat", { motdepasse: mdp }); }
+  catch (e) {
+    if (e.statut === 401 || e.statut === 429) { ecrireMdp(""); return pageConnexion(e.message); }
+    document.getElementById("contenu").innerHTML = `<p class="erreur">Le serveur de suivi ne répond pas : ${esc(e.message)}. <button class="lien" onclick="afficher()">Réessayer</button></p>`;
+    return;
+  }
+  document.getElementById("quitter").hidden = false;
+  const eleves = reponse.eleves;
+  document.getElementById("contenu").innerHTML = `
+    <h1 class="titre">Suivi des élèves</h1>
+    <p class="aide">Une case verte est un jour fait. Cliquez sur une case verte pour la remettre à « non fait » : l'élève devra le refaire et le renvoyer.</p>
+    <div class="barre"><button class="btn btn--secondaire" onclick="afficher()">Actualiser</button><span class="aide" style="margin:0">${eleves.length} élève${eleves.length > 1 ? "s" : ""} avec au moins un jour fait</span></div>
+    <p class="message" id="message" role="status"></p>
+    ${eleves.length ? eleves.map(eleveHtml).join("") : `<p class="aide">Aucun jour n'a encore été enregistré.</p>`}`;
+}
+
+function eleveHtml(e) {
+  const total = Object.values(e.jours).reduce((s, l) => s + l.length, 0);
+  return `<section class="eleve">
+    <div class="eleve-tete"><h2>${esc(e.code)}</h2><span class="aide" style="margin:0">${esc(nomClasse(e.classe))} · ${total} jour${total > 1 ? "s" : ""} fait${total > 1 ? "s" : ""}</span></div>
+    ${Object.keys(NOMS).map(r => parcoursHtml(e, r)).join("")}
+  </section>`;
+}
+
+function parcoursHtml(e, routine) {
+  const faits = new Map(e.jours[routine].map(j => [j.n, j.date]));
+  const cases = Array.from({ length: 100 }, (_, i) => {
+    const n = i + 1;
+    return faits.has(n)
+      ? `<button class="case fait" title="Jour ${n} fait le ${esc(dateFr(faits.get(n)))} — cliquer pour remettre à « non fait »" onclick="remettre('${e.empreinte}','${esc(e.code)}','${routine}',${n})">${n}</button>`
+      : `<button class="case" disabled title="Jour ${n} : non fait">${n}</button>`;
+  }).join("");
+  return `<div class="parcours">
+    <div class="parcours-tete"><h3>${esc(NOMS[routine])}<small>${faits.size}/100</small></h3>
+      ${faits.size ? `<button class="lien" onclick="remettre('${e.empreinte}','${esc(e.code)}','${routine}','tous')">Tout remettre à « non fait »</button>` : ""}</div>
+    <div class="grille">${cases}</div></div>`;
+}
+
+async function remettre(empreinte, code, routine, jour) {
+  const quoi = jour === "tous" ? `tous les jours de « ${NOMS[routine]} »` : `le jour ${jour} de « ${NOMS[routine]} »`;
+  if (!confirm(`Remettre ${quoi} à « non fait » pour ${code} ?`)) return;
+  try {
+    await appelerSuivi("/admin/reinitialiser", { motdepasse: lireMdp(), empreinte, routine, jour });
+  } catch (e) {
+    if (e.statut === 401) { ecrireMdp(""); return pageConnexion("Session expirée : saisissez de nouveau le mot de passe."); }
+    alert("Échec : " + e.message); return;
+  }
+  await afficher();
+  document.getElementById("message").textContent = `✓ ${code} : ${quoi} remis à « non fait ».`;
+}
+
+document.getElementById("quitter").addEventListener("click", () => { ecrireMdp(""); afficher(); });
+afficher();
+</script>
+</body>
+</html>

@@ -95,3 +95,55 @@ function ajouterJour(routine, code, n) {
   if (!j.includes(n)) j.push(n);
   try { localStorage.setItem(cleJours(routine, code), JSON.stringify(j.sort((a, b) => a - b))); } catch (e) {}
 }
+
+// ---------- Suivi des jours (Worker « routinesite-suivi ») ----------
+// Adresse du Worker, à renseigner après son déploiement (voir worker/LISEZMOI.md),
+// par exemple "https://routinesite-suivi.mon-compte.workers.dev". Vide : suivi local seulement.
+const URL_SUIVI = "";
+const CLE_ATTENTE = "routinesite:attente";
+
+async function appelerSuivi(chemin, corps) {
+  if (!URL_SUIVI) throw new Error("suivi non configuré");
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 6000);
+  try {
+    const r = await fetch(URL_SUIVI.replace(/\/+$/, "") + chemin, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps), signal: ctl.signal
+    });
+    const donnees = await r.json().catch(() => ({}));
+    if (!r.ok) { const e = new Error(donnees.erreur || `Erreur ${r.status}`); e.statut = r.status; throw e; }
+    return donnees;
+  } finally { clearTimeout(t); }
+}
+
+function lireAttente() { try { return JSON.parse(localStorage.getItem(CLE_ATTENTE)) || []; } catch (e) { return []; } }
+function ecrireAttente(l) { try { localStorage.setItem(CLE_ATTENTE, JSON.stringify(l)); } catch (e) {} }
+
+// Enregistre un jour fait auprès du Worker ; si le Worker est injoignable, le jour reste en attente.
+async function enregistrerJour(session, routine, n) {
+  ajouterJour(routine, session.code, n);
+  if (!URL_SUIVI) return;
+  try {
+    await appelerSuivi("/valider", { classe: session.classe, code: session.code, routine, jour: n });
+  } catch (e) {
+    if (e.statut) return; // refus du serveur (code, jour) : inutile de réessayer
+    const l = lireAttente();
+    if (!l.some(x => x.routine === routine && x.n === n && x.code === session.code)) l.push({ classe: session.classe, code: session.code, routine, n });
+    ecrireAttente(l);
+  }
+}
+
+// Aligne les jours de l'appareil sur ceux du Worker (la remise à « non fait » par l'enseignant s'y applique).
+async function synchroniserJours(session) {
+  if (!URL_SUIVI) return false;
+  try {
+    const attente = lireAttente();
+    for (const x of attente) { try { await appelerSuivi("/valider", { classe: x.classe, code: x.code, routine: x.routine, jour: x.n }); } catch (e) { if (!e.statut) throw e; } }
+    if (attente.length) ecrireAttente([]);
+    const { jours } = await appelerSuivi("/etat", { classe: session.classe, code: session.code });
+    for (const routine of Object.keys(jours)) {
+      try { localStorage.setItem(cleJours(routine, session.code), JSON.stringify(jours[routine])); } catch (e) {}
+    }
+    return true;
+  } catch (e) { return false; }
+}

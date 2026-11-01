@@ -1,0 +1,19 @@
+# Worker « routinesite-suivi » : enregistre les jours faits par élève et sert l'espace enseignant.
+# Déploiement : voir LISEZMOI.md. Les valeurs ci-dessous sont publiques ; le mot de passe enseignant
+# est un secret (npx wrangler secret put ADMIN_PASSWORD).
+name = "routinesite-suivi"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+# Adresse du site GitHub Pages (sans chemin ni / final), séparées par des virgules
+ALLOWED_ORIGINS = "https://mikhub-dev.github.io"
+# Identique au sel de MathSite (evaluations.js) et de commun.js
+SEL = "mathsite:"
+# Empreintes SHA-256 des codes élèves, par classe (les mêmes que eleves/2026-2027.json de MathSite)
+EMPREINTES = '{"5e":["489c1aecd78964bf6e285c1425430f40b6a14f6cc4ba1f9ffd2bc2f48b203a24"],"seconde":["8f29042f5b26a90537a0cec56715742c14a0e793fd534ed7b5478796565bc56f"]}'
+
+# Stockage : un espace KV (créé avec « npx wrangler kv namespace create SUIVI »). Remplacer l'id ci-dessous.
+[[kv_namespaces]]
+binding = "SUIVI"
+id = "REMPLACER_PAR_L_ID_DU_KV"
