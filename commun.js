@@ -73,10 +73,12 @@ const nomClasse = key => (CLASSES.find(k => k.key === key) || {}).nom || key;
 
 // Une seule session mémorisée : { classe, code }.
 function lireSession() {
-  try { return JSON.parse(localStorage.getItem(STOCKAGE)) || null; } catch (e) { return null; }
+  // Le code n'est gardé que pour l'onglet ouvert (sessionStorage) : fermer la page oblige à le ressaisir.
+  try { localStorage.removeItem(STOCKAGE); } catch (e) {}   // efface un ancien code mémorisé durablement
+  try { return JSON.parse(sessionStorage.getItem(STOCKAGE)) || null; } catch (e) { return null; }
 }
 function ecrireSession(s) {
-  try { s ? localStorage.setItem(STOCKAGE, JSON.stringify(s)) : localStorage.removeItem(STOCKAGE); } catch (e) {}
+  try { s ? sessionStorage.setItem(STOCKAGE, JSON.stringify(s)) : sessionStorage.removeItem(STOCKAGE); } catch (e) {}
 }
 // Session valide (code toujours reconnu) ou null.
 async function sessionValide() {
