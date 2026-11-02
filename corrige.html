@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exercices et corrigés · Espace enseignant · RoutineSite</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="contenu.css">
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
+<style>
+  .seance { max-width: none; }
+  .fil { color: var(--doux); font-size: 14px; margin: 0 0 6px; }
+  .objectif { color: var(--doux); font-size: 17px; margin: 0 0 22px; }
+  .bloc { background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; padding: 20px 24px; margin-bottom: 18px; }
+  .bloc h2 { margin: 0 0 14px; font-size: 20px; }
+  .bloc h2 small { color: var(--doux); font-weight: 400; font-size: 14px; margin-left: 8px; }
+  .content { font-size: 17px; line-height: 1.65; }
+  .exo { border-top: 1px solid var(--bord); padding-top: 16px; margin-top: 16px; scroll-margin-top: 12px; }
+  .exo:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+  .exo h3 { margin: 0 0 10px; font-size: 18px; }
+  .etoiles { color: var(--ambre, #e3b053); letter-spacing: 2px; margin-left: 8px; font-size: 15px; }
+  .corr { margin-top: 14px; border-left: 3px solid var(--vert); padding: 4px 0 0 16px; }
+  .corr > .box-h { color: var(--vert); }
+  .sauts { display: flex; gap: 14px; flex-wrap: wrap; margin: 0 0 18px; font-size: 14px; }
+  .navjour { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+  details.cours > summary { font-size: 18px; }
+  details.cours[open] > summary { margin-bottom: 14px; }
+</style>
+</head>
+<body>
+
+<header id="navbar">
+  <div class="nav-left">
+    <div class="logo-mark" aria-hidden="true">30'</div>
+    <div class="logo-text">
+      <span class="logo">RoutineSite</span>
+      <span class="logo-tagline">Espace enseignant</span>
+    </div>
+  </div>
+  <nav class="nav-links" aria-label="Navigation">
+    <a href="enseignant.html">Suivi des élèves</a>
+    <a href="index.html">Accueil</a>
+  </nav>
+</header>
+
+<main class="page seance" id="contenu"><p class="sous-titre">Chargement…</p></main>
+
+<script src="commun.js"></script>
+<script src="vendor/katex/katex.min.js"></script>
+<script>
+// Page réservée à l'enseignant : exercices d'un jour avec leurs corrigés, sans rien enregistrer dans le suivi.
+const CLE_ADMIN = "routinesite:admin";
+const ROUTINES = {
+  probabilites: { nom: "Probabilités en 100 jours", court: "Probabilités", fichier: "data/probabilites.json" },
+  technologie: { nom: "Technologie numérique en 100 jours", court: "Technologie numérique", fichier: "data/technologie.json" }
+};
+
+const params = new URLSearchParams(location.search);
+const cleRoutine = ROUTINES[params.get("r")] ? params.get("r") : null;
+let numero = parseInt(params.get("j"), 10);
+if (!(numero >= 1 && numero <= 100)) numero = 1;
+
+function lireMdp() { try { return sessionStorage.getItem(CLE_ADMIN) || ""; } catch (e) { return ""; } }
+function oublierMdp() { try { sessionStorage.removeItem(CLE_ADMIN); } catch (e) {} }
+
+function mathematiques(racine) {
+  if (!window.katex) return;
+  racine.querySelectorAll(".tex").forEach(el => {
+    if (el.dataset.rendu) return;
+    try {
+      katex.render(el.textContent, el, { displayMode: el.classList.contains("tex-d"), throwOnError: false, strict: "ignore" });
+      el.dataset.rendu = "1";
+    } catch (e) {}
+  });
+}
+
+// true : mot de passe reconnu par le Worker ; false : absent ou refusé ; null : Worker injoignable.
+async function verifierEnseignant() {
+  const mdp = lireMdp();
+  if (!mdp || !URL_SUIVI) return false;
+  try { await appelerSuivi("/admin/etat", { motdepasse: mdp }); return true; }
+  catch (e) {
+    if (e.statut === 401 || e.statut === 429) { oublierMdp(); return false; }
+    return null;
+  }
+}
+
+function afficherJour(jour) {
+  const R = ROUTINES[cleRoutine];
+  const lien = n => `corrige.html?r=${cleRoutine}&j=${n}`;
+  const precedent = numero > 1 ? `<a class="btn btn--secondaire" href="${lien(numero - 1)}">← Jour ${numero - 1}</a>` : "<span></span>";
+  const suivant = numero < 100 ? `<a class="btn btn--secondaire" href="${lien(numero + 1)}">Jour ${numero + 1} →</a>` : "<span></span>";
+  const c = document.getElementById("contenu");
+  c.innerHTML = `
+    <p class="fil"><a class="lien" href="enseignant.html">← Espace enseignant</a> · ${esc(R.nom)}</p>
+    <h1 class="titre">Jour ${numero} · ${esc(jour.titreTxt || jour.titre)}</h1>
+    <p class="objectif">${esc(jour.niveau)} — ${esc(jour.objectif)}</p>
+    <div class="sauts">${jour.exercices.map((e, i) => `<a class="lien" href="#exo-${i + 1}">Exercice ${i + 1}</a>`).join("")}<a class="lien" href="#cours">Cours du jour</a></div>
+
+    <section class="bloc"><h2>Exercices et corrigés <small>vue enseignant · rien n'est enregistré dans le suivi</small></h2>
+      ${jour.exercices.map((e, i) => `
+        <div class="exo" id="exo-${i + 1}">
+          <h3>Exercice ${i + 1} · ${esc(e.titre)}<span class="etoiles" aria-label="difficulté ${e.etoiles}">${"★".repeat(e.etoiles || 1)}</span></h3>
+          <div class="content">${e.enonce}</div>
+          <div class="corr"><div class="box-h">Corrigé</div><div class="content">${e.correction}</div></div>
+        </div>`).join("")}
+    </section>
+
+    <section class="bloc"><div class="content"><div class="box box-retenir"><div class="box-h">À retenir</div><p>${jour.retenir}</p></div></div></section>
+
+    <section class="bloc" id="cours"><details class="cours"><summary>Cours du jour <small style="font-weight:400;color:var(--doux)">≈ 12 minutes</small></summary>
+      <div class="content">${jour.apprendre}</div></details></section>
+
+    <div class="navjour">${precedent}${suivant}</div>`;
+  document.title = `Jour ${numero} · ${R.court} · Exercices et corrigés · RoutineSite`;
+  mathematiques(c);
+  window.addEventListener("load", () => mathematiques(c));
+  const ancre = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+  if (ancre) { if (ancre.id === "cours") ancre.querySelector("details").open = true; ancre.scrollIntoView(); }
+}
+
+(async function () {
+  const c = document.getElementById("contenu");
+  const ok = await verifierEnseignant();
+  if (ok === false) { location.replace("enseignant.html"); return; }
+  if (ok === null) {
+    c.innerHTML = `<p class="erreur">Le serveur de suivi ne répond pas : impossible de vérifier le mot de passe enseignant. <button class="lien" onclick="location.reload()">Réessayer</button> · <a class="lien" href="enseignant.html">Espace enseignant</a></p>`;
+    return;
+  }
+  if (!cleRoutine) { c.innerHTML = `<p class="erreur">Routine inconnue. <a class="lien" href="enseignant.html">Retour à l'espace enseignant</a></p>`; return; }
+  let jour;
+  try {
+    const donnees = await (await fetch(ROUTINES[cleRoutine].fichier)).json();
+    jour = donnees.jours.find(j => j.n === numero);
+    if (!jour) throw new Error("jour introuvable");
+  } catch (e) {
+    c.innerHTML = `<p class="erreur">Impossible de charger la séance (ouvrez le site depuis son adresse en ligne, pas depuis un fichier). <a class="lien" href="enseignant.html">Retour</a></p>`;
+    return;
+  }
+  afficherJour(jour);
+})();
+</script>
+</body>
+</html>

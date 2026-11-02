@@ -28,6 +28,21 @@
   .message { color: var(--vert); font-size: 14px; margin: 0 0 12px; }
   .message:empty { display: none; }
   [hidden] { display: none !important; }
+  .catalogue { margin-bottom: 26px; }
+  .catalogue h2 { margin: 0 0 6px; font-size: 22px; }
+  .catalogue details { margin-bottom: 10px; background: var(--panneau); }
+  .catalogue summary { font-size: 17px; }
+  .catalogue summary small { color: var(--doux); font-weight: 400; margin-left: 8px; }
+  .module-ens { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 16px; align-items: center; padding: 10px 0; border-top: 1px solid var(--bord); }
+  .module-ens:first-of-type { margin-top: 12px; }
+  .module-ens h3 { margin: 0; font-size: 15px; }
+  .module-ens h3 small { display: block; color: var(--doux); font-weight: 400; font-size: 13px; margin-top: 2px; }
+  .grille-liens { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px; max-width: 640px; }
+  .jour-lien { display: block; padding: 8px 0; text-align: center; border-radius: 8px; border: 1px solid var(--bord);
+    background: var(--panneau-2); color: var(--texte); text-decoration: none; font-size: 14px; }
+  .jour-lien:hover, .jour-lien:focus-visible { border-color: var(--bleu); color: var(--bleu); outline: none; }
+  .jour-lien.bilan { border-style: dashed; }
+  @media (max-width: 760px) { .module-ens { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -52,6 +67,7 @@
 <script>
 const CLE_ADMIN = "routinesite:admin";
 const NOMS = { probabilites: "Probabilités en 100 jours", technologie: "Technologie numérique en 100 jours" };
+const FICHIERS = { probabilites: "data/probabilites.json", technologie: "data/technologie.json" };
 
 const lireMdp = () => { try { return sessionStorage.getItem(CLE_ADMIN) || ""; } catch (e) { return ""; } };
 const ecrireMdp = m => { try { m ? sessionStorage.setItem(CLE_ADMIN, m) : sessionStorage.removeItem(CLE_ADMIN); } catch (e) {} };
@@ -100,12 +116,57 @@ async function afficher() {
   }
   document.getElementById("quitter").hidden = false;
   const eleves = reponse.eleves;
+  const catalogue = await chargerCatalogue();
   document.getElementById("contenu").innerHTML = `
     <h1 class="titre">Suivi des élèves</h1>
     <p class="aide">Une case verte est un jour fait. Cliquez sur une case verte pour la remettre à « non fait » : l'élève devra le refaire et le renvoyer.</p>
     <div class="barre"><button class="btn btn--secondaire" onclick="afficher()">Actualiser</button><span class="aide" style="margin:0">${eleves.length} élève${eleves.length > 1 ? "s" : ""} avec au moins un jour fait</span></div>
     <p class="message" id="message" role="status"></p>
+    ${catalogueHtml(catalogue)}
     ${eleves.length ? eleves.map(eleveHtml).join("") : `<p class="aide">Aucun jour n'a encore été enregistré.</p>`}`;
+}
+
+// Modules et jours de chaque routine, pour les liens vers les exercices et leurs corrigés (null si le fichier ne se charge pas).
+let catalogueMemo = null;
+async function chargerCatalogue() {
+  if (catalogueMemo) return catalogueMemo;
+  const cat = {};
+  for (const r of Object.keys(FICHIERS)) {
+    try {
+      const d = await (await fetch(FICHIERS[r])).json();
+      if (!Array.isArray(d.modules) || !Array.isArray(d.jours)) throw new Error("format");
+      cat[r] = d;
+    } catch (e) { cat[r] = null; }
+  }
+  if (Object.values(cat).every(Boolean)) catalogueMemo = cat;
+  return cat;
+}
+
+function catalogueHtml(cat) {
+  return `<section class="catalogue" id="catalogue">
+    <h2>Exercices et corrigés</h2>
+    <p class="aide">Cliquez sur un jour pour ouvrir ses trois exercices avec leurs corrigés. Cette vue ne change rien au suivi des élèves.</p>
+    ${Object.keys(NOMS).map(r => routineCatalogueHtml(r, cat[r])).join("")}
+  </section>`;
+}
+
+function routineCatalogueHtml(routine, d) {
+  if (!d) return `<details id="exos-${routine}"><summary>${esc(NOMS[routine])}</summary><p class="erreur">Impossible de charger les séances (ouvrez le site depuis son adresse en ligne).</p></details>`;
+  const modules = d.modules.map(m => {
+    const jours = d.jours.filter(j => j.module === m.id);
+    return `<div class="module-ens">
+      <h3>${esc(m.titre)}<small>${esc(m.niveau)} · jours ${jours[0].n} à ${jours[jours.length - 1].n}</small></h3>
+      <div class="grille-liens">${jours.map(j => `<a class="jour-lien${j.n % 10 === 0 ? " bilan" : ""}" href="corrige.html?r=${routine}&j=${j.n}" title="${esc("Jour " + j.n + " · " + (j.titreTxt || j.titre) + " — exercices et corrigés")}">${j.n}</a>`).join("")}</div>
+    </div>`;
+  }).join("");
+  return `<details id="exos-${routine}"><summary>${esc(NOMS[routine])}<small>${d.jours.length} jours · 3 exercices corrigés par jour</small></summary>${modules}</details>`;
+}
+
+function ouvrirCatalogue(routine) {
+  const d = document.getElementById("exos-" + routine);
+  if (!d) return;
+  d.open = true;
+  d.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function eleveHtml(e) {
@@ -126,7 +187,7 @@ function parcoursHtml(e, routine) {
   }).join("");
   return `<div class="parcours">
     <div class="parcours-tete"><h3>${esc(NOMS[routine])}<small>${faits.size}/100</small></h3>
-      ${faits.size ? `<button class="lien" onclick="remettre('${e.empreinte}','${esc(e.code)}','${routine}','tous')">Tout remettre à « non fait »</button>` : ""}</div>
+      <span><button class="lien" onclick="ouvrirCatalogue('${routine}')">Exercices et corrigés</button>${faits.size ? ` · <button class="lien" onclick="remettre('${e.empreinte}','${esc(e.code)}','${routine}','tous')">Tout remettre à « non fait »</button>` : ""}</span></div>
     <div class="grille">${cases}</div></div>`;
 }
 
