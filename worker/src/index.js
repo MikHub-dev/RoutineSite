@@ -1,4 +1,4 @@
-// Version : 1.2 (séances de « Fluidité verbale » + archivage audio dans un dépôt GitHub privé)
+// Version : 1.3 (séances de « Fluidité verbale », archivage audio dans un dépôt GitHub privé, accès et remise à zéro réservés à l'enseignant)
 // Worker « routinesite-suivi » : suivi des jours faits par élève pour RoutineSite.
 //
 // Routes (toutes en POST, JSON) :
@@ -14,6 +14,9 @@
 //   /admin/parole/noter { motdepasse, cle, notes, retour }    -> enregistre les notes et le retour de Claude
 //   /admin/parole/supprimer { motdepasse, cle }               -> supprime une séance
 //   /parole/audio       { classe, code, jour, seance, exo, mime, duree, audio(base64) } -> archive l'enregistrement dans un dépôt GitHub PRIVÉ
+//   /admin/parole/archive       { motdepasse }                -> liste les fichiers de l'archive audio
+//   /admin/parole/audio         { motdepasse, chemin }        -> sert un fichier de l'archive (lecture / téléchargement)
+//   /admin/parole/reinitialiser { motdepasse, empreinte, jour|"tous", audios:"garder"|"supprimer" } -> remise à zéro d'un jour
 //
 // Archivage audio : secret GITHUB_TOKEN (jeton limité au dépôt d'archive, droit « Contents : lecture et écriture »)
 // et variable AUDIO_REPO (« propriétaire/dépôt »). Le Worker refuse d'écrire si le dépôt n'est pas privé.
@@ -54,6 +57,9 @@ export default {
       if (chemin === "/parole/enregistrer") return await paroleEnregistrer(env, corps, cors);
       if (chemin === "/parole/etat") return await paroleEtat(env, corps, cors);
       if (chemin === "/parole/audio") return await paroleAudio(env, corps, cors);
+      if (chemin === "/admin/parole/archive") return await adminParoleArchive(env, request, corps, cors);
+      if (chemin === "/admin/parole/audio") return await adminParoleAudio(env, request, corps, cors);
+      if (chemin === "/admin/parole/reinitialiser") return await adminParoleReinitialiser(env, request, corps, cors);
       if (chemin === "/admin/parole") return await adminParole(env, request, corps, cors);
       if (chemin === "/admin/parole/noter") return await adminParoleNoter(env, request, corps, cors);
       if (chemin === "/admin/parole/supprimer") return await adminParoleSupprimer(env, request, corps, cors);
@@ -116,6 +122,7 @@ async function adminReinitialiser(env, request, c, cors) {
   if (refus) return refus;
   if (typeof c.empreinte !== "string" || !/^[0-9a-f]{64}$/.test(c.empreinte)) return json({ erreur: "Élève invalide" }, 400, cors);
   if (!ROUTINES.includes(c.routine)) return json({ erreur: "Routine inconnue" }, 400, cors);
+  if (c.routine === "parole") return json({ erreur: "Pour la fluidité verbale, utilisez /admin/parole/reinitialiser (choix de conserver ou non les audios)" }, 400, cors);
   let supprimes = 0;
   if (c.jour === "tous") {
     for (const nom of await toutesLesCles(env, `fait:${c.empreinte}:${c.routine}:`)) { await env.SUIVI.delete(nom); supprimes++; }
@@ -186,16 +193,16 @@ async function paroleEnregistrer(env, c, cors) {
 const MAX_AUDIO_BASE64 = 4500000;          // ≈ 3,3 Mo d'audio
 const TYPES_AUDIO = { "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/mpeg": "mp3" };
 
-function appelGitHub(env, methode, chemin, corps) {
+function appelGitHub(env, methode, chemin, corps, accept = "application/vnd.github+json") {
   return fetch("https://api.github.com" + chemin, {
     method: methode,
-    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, "User-Agent": "routinesite-suivi", Accept: "application/vnd.github+json",
+    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, "User-Agent": "routinesite-suivi", Accept: accept,
       "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json" },
     body: corps ? JSON.stringify(corps) : undefined
   });
 }
 
-// Vrai seulement si le dépôt d'archive existe et est PRIVÉ (résultat gardé une heure).
+// Vrai seulement si le dépôt d'archive existe et est PRIVÉ (résultat gardé une minute : un dépôt rendu public est vite détecté).
 async function depotPrive(env, depot) {
   const cle = `audio:prive:${depot}`;
   if (await env.SUIVI.get(cle)) return true;
@@ -203,7 +210,7 @@ async function depotPrive(env, depot) {
   if (!r.ok) return false;
   const d = await r.json().catch(() => ({}));
   if (d.private !== true) return false;
-  await env.SUIVI.put(cle, "1", { expirationTtl: 3600 });
+  await env.SUIVI.put(cle, "1", { expirationTtl: 60 });
   return true;
 }
 
@@ -237,6 +244,122 @@ async function paroleAudio(env, c, cors) {
     await env.SUIVI.put(cleSeance, JSON.stringify(v));
   }
   return json({ ok: true, chemin }, 200, cors);
+}
+
+// ---------- Archive audio : accès réservé à l'enseignant (mot de passe) ----------
+const CHEMIN_ARCHIVE = /^audio\/(5e|seconde)\/[A-Z0-9]{6,20}\/jour-\d{3}\/[\w.-]+\.(webm|ogg|m4a|mp3|json)$/;
+const TYPES_SERVIS = { webm: "audio/webm", ogg: "audio/ogg", m4a: "audio/mp4", mp3: "audio/mpeg", json: "application/json" };
+
+// Dépôt d'archive utilisable (configuré ET privé) : nom du dépôt, ou une réponse d'erreur.
+async function archiveUtilisable(env, cors) {
+  const depot = env.AUDIO_REPO || "";
+  if (!env.GITHUB_TOKEN || !/^[\w.-]+\/[\w.-]+$/.test(depot)) return { refus: json({ erreur: "Archive audio non configurée" }, 503, cors) };
+  if (!(await depotPrive(env, depot))) return { refus: json({ erreur: "Archive audio inaccessible : le dépôt doit exister et être privé" }, 503, cors) };
+  return { depot };
+}
+const parametreBranche = env => env.AUDIO_BRANCH ? `?ref=${encodeURIComponent(env.AUDIO_BRANCH)}` : "";
+
+async function adminParoleArchive(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  const a = await archiveUtilisable(env, cors);
+  if (a.refus) return a.refus;
+  const r = await appelGitHub(env, "GET", `/repos/${a.depot}/git/trees/${encodeURIComponent(env.AUDIO_BRANCH || "HEAD")}?recursive=1`);
+  if (r.status === 404 || r.status === 409) return json({ ok: true, fichiers: [], tronque: false }, 200, cors);   // dépôt vide
+  if (!r.ok) return json({ erreur: `Archive : refus de GitHub (${r.status})` }, 502, cors);
+  const d = await r.json().catch(() => ({}));
+  const fichiers = (d.tree || []).filter(x => x.type === "blob" && CHEMIN_ARCHIVE.test(x.path)).map(x => {
+    const [, classe, code, jour, nom] = x.path.split("/");
+    return { chemin: x.path, classe, code, jour: Number(jour.slice(5)), nom, taille: x.size || 0 };
+  });
+  return json({ ok: true, fichiers, tronque: !!d.truncated }, 200, cors);
+}
+
+// Sert un fichier de l'archive. Le dépôt est celui du Worker (jamais choisi par l'appelant) ; le chemin est contrôlé.
+async function adminParoleAudio(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  if (typeof c.chemin !== "string" || !CHEMIN_ARCHIVE.test(c.chemin)) return json({ erreur: "Fichier invalide" }, 400, cors);
+  const a = await archiveUtilisable(env, cors);
+  if (a.refus) return a.refus;
+  const r = await appelGitHub(env, "GET", `/repos/${a.depot}/contents/${c.chemin}${parametreBranche(env)}`, null, "application/vnd.github.raw+json");
+  if (r.status === 404) return json({ erreur: "Fichier introuvable dans l'archive" }, 404, cors);
+  if (!r.ok) return json({ erreur: `Archive : refus de GitHub (${r.status})` }, 502, cors);
+  const ext = c.chemin.split(".").pop();
+  return new Response(r.body, { status: 200, headers: { "Content-Type": TYPES_SERVIS[ext] || "application/octet-stream", "Cache-Control": "no-store", ...cors } });
+}
+
+// ---------- Remise à zéro d'un jour de « Fluidité verbale » ----------
+const MAX_SUPPRESSIONS = 200;
+const versBase64 = texte => { let s = ""; new TextEncoder().encode(texte).forEach(b => { s += String.fromCharCode(b); }); return btoa(s); };
+
+async function listerDossier(env, depot, chemin) {
+  const r = await appelGitHub(env, "GET", `/repos/${depot}/contents/${chemin}${parametreBranche(env)}`);
+  if (r.status === 404) return [];
+  if (!r.ok) throw new Error(`GitHub ${r.status}`);
+  const d = await r.json();
+  return Array.isArray(d) ? d : [d];
+}
+async function purgerDossier(env, depot, chemin, compteur, profondeur = 0) {
+  for (const e of await listerDossier(env, depot, chemin)) {
+    if (typeof e.path !== "string" || !e.path.startsWith("audio/")) continue;
+    if (e.type === "dir") { if (profondeur < 3) await purgerDossier(env, depot, e.path, compteur, profondeur + 1); continue; }
+    if (e.type !== "file") continue;
+    if (compteur.n >= MAX_SUPPRESSIONS) throw new Error("trop de fichiers à supprimer en une fois");
+    const r = await appelGitHub(env, "DELETE", `/repos/${depot}/contents/${e.path}`, { message: `Suppression audio (remise à zéro) ${e.path}`, sha: e.sha, ...(env.AUDIO_BRANCH ? { branch: env.AUDIO_BRANCH } : {}) });
+    if (!r.ok) throw new Error(`GitHub ${r.status}`);
+    compteur.n++;
+  }
+}
+
+async function adminParoleReinitialiser(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  if (typeof c.empreinte !== "string" || !/^[0-9a-f]{64}$/.test(c.empreinte)) return json({ erreur: "Élève invalide" }, 400, cors);
+  if (c.audios !== "garder" && c.audios !== "supprimer") return json({ erreur: "Précisez s'il faut garder ou supprimer les audios" }, 400, cors);
+  const tous = c.jour === "tous", n = Number(c.jour);
+  if (!tous && (!Number.isInteger(n) || n < 1 || n > 100)) return json({ erreur: "Jour invalide" }, 400, cors);
+
+  const clesSeances = await toutesLesCles(env, tous ? `parole:${c.empreinte}:` : `parole:${c.empreinte}:${n}:`);
+  const clesFait = (await toutesLesCles(env, `fait:${c.empreinte}:parole:`)).filter(k => tous || k === `fait:${c.empreinte}:parole:${n}`);
+  const seances = [];
+  for (const k of clesSeances) { const v = JSON.parse((await env.SUIVI.get(k)) || "null"); if (v) seances.push(v); }
+  let ident = seances[0] ? { classe: seances[0].classe, code: seances[0].code } : null;
+  if (!ident && clesFait[0]) { const v = JSON.parse((await env.SUIVI.get(clesFait[0])) || "null"); if (v) ident = { classe: v.classe, code: v.code }; }
+  const nbReferences = seances.reduce((s, x) => s + (x.audios || []).length, 0);
+
+  const rapport = { seances: clesSeances.length, joursRemis: clesFait.length, audiosSupprimes: 0, audiosConserves: nbReferences, instantanes: [] };
+  const a = (env.GITHUB_TOKEN && env.AUDIO_REPO && ident) ? await archiveUtilisable(env, cors) : { refus: null, depot: null };
+  if (a.refus && nbReferences) return a.refus;          // des audios existent mais l'archive est inaccessible : on ne touche à rien
+
+  if (a.depot) {
+    try {
+      if (c.audios === "supprimer") {
+        const compteur = { n: 0 };
+        const dossiers = tous ? [`audio/${ident.classe}/${ident.code}`] : [`audio/${ident.classe}/${ident.code}/jour-${String(n).padStart(3, "0")}`];
+        for (const d of dossiers) await purgerDossier(env, a.depot, d, compteur);
+        rapport.audiosSupprimes = compteur.n; rapport.audiosConserves = 0;
+      } else if (nbReferences) {
+        // les audios restent dans l'archive ; on y dépose aussi les mesures, notes et transcriptions de la séance remise à zéro
+        const parJour = {};
+        seances.forEach(s => { (parJour[s.jour] = parJour[s.jour] || []).push(s); });
+        const horodatage = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15);
+        for (const [jour, liste] of Object.entries(parJour)) {
+          if (!liste.some(s => (s.audios || []).length)) continue;
+          const chemin = `audio/${ident.classe}/${ident.code}/jour-${String(jour).padStart(3, "0")}/reinitialisation-${horodatage}.json`;
+          const contenu = JSON.stringify({ reinitialiseLe: new Date().toISOString(), classe: ident.classe, code: ident.code, jour: Number(jour), seances: liste }, null, 2);
+          const r = await appelGitHub(env, "PUT", `/repos/${a.depot}/contents/${chemin}`, { message: `Sauvegarde avant remise à zéro ${ident.code} jour ${jour}`, content: versBase64(contenu), ...(env.AUDIO_BRANCH ? { branch: env.AUDIO_BRANCH } : {}) });
+          if (!r.ok) throw new Error(`GitHub ${r.status}`);
+          rapport.instantanes.push(chemin);
+        }
+      }
+    } catch (e) {
+      return json({ erreur: `Remise à zéro interrompue, rien n'a été effacé côté suivi : ${e.message}` }, 502, cors);
+    }
+  }
+  for (const k of clesSeances) await env.SUIVI.delete(k);
+  for (const k of clesFait) await env.SUIVI.delete(k);
+  return json({ ok: true, ...rapport }, 200, cors);
 }
 
 async function seancesDe(env, prefixe) {

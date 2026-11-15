@@ -59,6 +59,16 @@
   .total-p { font-weight: 700; margin: 6px 0 0; }
   .grille-details h4 { margin: 14px 0 4px; }
   .small { font-size: 13px; color: var(--doux); }
+  .ov { position: fixed; inset: 0; background: rgba(0,0,0,.65); display: grid; place-items: center; z-index: 50; }
+  .ov-boite { background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; padding: 20px 24px; max-width: 580px; width: calc(100% - 32px); max-height: 90vh; overflow: auto; }
+  .ov-boite h3 { margin: 0 0 8px; font-size: 19px; }
+  .ov-choix { margin: 14px 0; }
+  .ov-choix .small { margin: 6px 0 0; }
+  .btn--danger { background: var(--rouge); border-color: var(--rouge); color: #0f1116; }
+  .btn--danger:hover { background: #ff8a8a; }
+  .archive-groupe h4 { margin: 14px 0 4px; font-size: 15px; }
+  .archive-groupe ul, .seance-p ul.audios { margin: 4px 0 0; padding-left: 20px; }
+  .archive-groupe li, .seance-p ul.audios li { padding: 3px 0; }
 </style>
 </head>
 <body>
@@ -89,6 +99,10 @@ const FICHIERS = { probabilites: "data/probabilites.json", technologie: "data/te
 
 const lireMdp = () => { try { return sessionStorage.getItem(CLE_ADMIN) || ""; } catch (e) { return ""; } };
 const ecrireMdp = m => { try { m ? sessionStorage.setItem(CLE_ADMIN, m) : sessionStorage.removeItem(CLE_ADMIN); } catch (e) {} };
+const appelRemise = (e, routine, jour) => {
+  const j = jour === "tous" ? "'tous'" : jour;
+  return routine === "parole" ? `reinitParole('${e.empreinte}','${esc(e.code)}',${j})` : `remettre('${e.empreinte}','${esc(e.code)}','${routine}',${j})`;
+};
 const dateFr = iso => new Date(iso).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
 
 function pageConnexion(erreur) {
@@ -205,12 +219,12 @@ function parcoursHtml(e, routine) {
   const cases = Array.from({ length: 100 }, (_, i) => {
     const n = i + 1;
     return faits.has(n)
-      ? `<button class="case fait" title="Jour ${n} fait le ${esc(dateFr(faits.get(n)))} — cliquer pour remettre à « non fait »" onclick="remettre('${e.empreinte}','${esc(e.code)}','${routine}',${n})">${n}</button>`
+      ? `<button class="case fait" title="Jour ${n} fait le ${esc(dateFr(faits.get(n)))} — cliquer pour remettre à « non fait »" onclick="${appelRemise(e, routine, n)}">${n}</button>`
       : `<button class="case" disabled title="Jour ${n} : non fait">${n}</button>`;
   }).join("");
   return `<div class="parcours">
     <div class="parcours-tete"><h3>${esc(NOMS_ALL[routine])}<small>${faits.size}/100</small></h3>
-      <span>${FICHIERS[routine] ? `<button class="lien" onclick="ouvrirCatalogue('${routine}')">Exercices et corrigés</button>` : `<button class="lien" onclick="ouvrirParole()">Séances de parole</button>`}${faits.size ? ` · <button class="lien" onclick="remettre('${e.empreinte}','${esc(e.code)}','${routine}','tous')">Tout remettre à « non fait »</button>` : ""}</span></div>
+      <span>${FICHIERS[routine] ? `<button class="lien" onclick="ouvrirCatalogue('${routine}')">Exercices et corrigés</button>` : `<button class="lien" onclick="ouvrirParole()">Séances de parole</button>`}${faits.size ? ` · <button class="lien" onclick="${appelRemise(e, routine, 'tous')}">Tout remettre à « non fait »</button>` : ""}</span></div>
     <div class="grille">${cases}</div></div>`;
 }
 
@@ -243,6 +257,7 @@ function paroleSectionHtml(seances, erreur) {
     <h2>Fluidité verbale (POC) : séances et notes</h2>
     <p class="aide">Chaque séance est enregistrée automatiquement par la page de l'élève, avec ses mesures. Les points « mesurés » sont préremplis ; saisissez les critères jugés (liens, structure) ou collez le retour de Claude : sa ligne <code>[NOTES]</code> remplit les champs.</p>
     ${grilleHtml()}
+    ${erreur ? "" : archiveHtml()}
     ${corps}
   </section>`;
 }
@@ -274,16 +289,110 @@ function seanceHtml(s) {
     <label class="small" for="retour-${esc(s.cle.replace(/:/g, "_"))}">Retour de Claude (facultatif ; la ligne [NOTES] remplit les champs ci-dessus)</label>
     <textarea id="retour-${esc(s.cle.replace(/:/g, "_"))}" data-retour oninput="lireRetour('${esc(s.cle)}')">${esc(s.retour || "")}</textarea>
     <div class="barre"><button class="btn" type="button" onclick="enregistrerNotes('${esc(s.cle)}')">Enregistrer les notes</button>
-      <button class="lien" type="button" onclick="supprimerSeance('${esc(s.cle)}')">Supprimer cette séance</button>
+      <button class="lien" type="button" onclick="reinitParole('${esc(s.cle.split(":")[1])}','${esc(s.code)}',${Number(s.jour)})">Remettre ce jour à zéro…</button>
+      <button class="lien" type="button" onclick="supprimerSeance('${esc(s.cle)}')">Supprimer cette séance seulement</button>
       <span class="small" data-msg></span></div>
   </div>`;
 }
 
+const boutonsArchive = chemin => `<button class="lien" type="button" data-audio="${esc(chemin)}" data-act="ecouter">▶ Écouter</button> · <button class="lien" type="button" data-audio="${esc(chemin)}" data-act="telecharger">Télécharger</button>`;
 function audiosHtml(s) {
   const a = s.audios || [];
   if (!a.length) return `<p class="small">Aucun enregistrement audio archivé pour cette séance.</p>`;
-  return `<p class="small">Enregistrements archivés (dépôt privé GitHub) : ${a.map(x =>
-    `<a class="lien" href="https://github.com/${esc(x.depot)}/blob/HEAD/${esc(x.chemin)}" target="_blank" rel="noopener">${x.exo === "ex1" ? "exercice 1" : "exercice 2"}${x.duree ? " (" + nf(x.duree, 0) + " s)" : ""} · ${esc(dateFr(x.date))}</a>`).join(" · ")}</p>`;
+  return `<p class="small" style="margin:6px 0 0">Enregistrements archivés (accès protégé par le mot de passe enseignant) :</p>
+    <ul class="audios small">${a.map(x => `<li>${x.exo === "ex1" ? "Exercice 1" : "Exercice 2"}${x.duree ? " (" + nf(x.duree, 0) + " s)" : ""} · ${esc(dateFr(x.date))} — ${boutonsArchive(x.chemin)}</li>`).join("")}</ul>`;
+}
+
+// Archive complète (dépôt privé) : liste, lecture et téléchargement réservés au mot de passe enseignant.
+function archiveHtml() {
+  return `<details id="archive-ens"><summary>Archive audio (dépôt privé) : accès protégé par le mot de passe enseignant</summary>
+    <p class="aide" style="margin-top:10px">Tous les enregistrements archivés, y compris ceux d'un jour remis à zéro avec conservation des audios. Les fichiers ne sont servis qu'après vérification du mot de passe ; ils ne sont lisibles nulle part ailleurs sur le site.</p>
+    <div class="barre"><button class="btn btn--secondaire" type="button" onclick="chargerArchive()">Charger l'archive</button><span class="small" id="archive-msg"></span></div>
+    <div id="archive-liste"></div></details>`;
+}
+async function chargerArchive() {
+  const msg = document.getElementById("archive-msg"), zone = document.getElementById("archive-liste");
+  msg.textContent = "Chargement…";
+  let r;
+  try { r = await appelerSuivi("/admin/parole/archive", { motdepasse: lireMdp() }, 30000); }
+  catch (e) {
+    if (e.statut === 401) { ecrireMdp(""); return pageConnexion("Session expirée : saisissez de nouveau le mot de passe."); }
+    msg.textContent = "Échec : " + e.message; return;
+  }
+  msg.textContent = `${r.fichiers.length} fichier${r.fichiers.length > 1 ? "s" : ""}${r.tronque ? " (liste tronquée)" : ""}`;
+  const groupes = {};
+  r.fichiers.forEach(f => { (groupes[`${f.code}|${f.classe}|${String(f.jour).padStart(3, "0")}`] = groupes[`${f.code}|${f.classe}|${String(f.jour).padStart(3, "0")}`] || []).push(f); });
+  zone.innerHTML = Object.keys(groupes).sort().map(k => {
+    const [code, classe, jour] = k.split("|");
+    return `<div class="archive-groupe"><h4>${esc(code)} · ${esc(nomClasse(classe))} · jour ${Number(jour)}</h4><ul class="small">${groupes[k].map(f => {
+      const donnees = f.nom.endsWith(".json");
+      return `<li>${donnees ? "Sauvegarde des données (remise à zéro)" : esc(f.nom)} (${nf(f.taille / 1024, 0)} Ko) — ${donnees ? `<button class="lien" type="button" data-audio="${esc(f.chemin)}" data-act="telecharger">Télécharger</button>` : boutonsArchive(f.chemin)}</li>`;
+    }).join("")}</ul></div>`;
+  }).join("") || `<p class="aide">L'archive est vide.</p>`;
+}
+
+// Lecture / téléchargement d'un fichier de l'archive : demandé au Worker avec le mot de passe (jamais d'adresse publique).
+async function recupererArchive(chemin) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 60000);
+  try {
+    const r = await fetch(URL_SUIVI.replace(/\/+$/, "") + "/admin/parole/audio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ motdepasse: lireMdp(), chemin }), signal: ctl.signal });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); const e = new Error(d.erreur || `Erreur ${r.status}`); e.statut = r.status; throw e; }
+    return await r.blob();
+  } finally { clearTimeout(t); }
+}
+document.addEventListener("click", async ev => {
+  const b = ev.target.closest && ev.target.closest("[data-audio]");
+  if (!b) return;
+  const chemin = b.dataset.audio, texte = b.textContent;
+  b.disabled = true; b.textContent = "Chargement…";
+  try {
+    const blob = await recupererArchive(chemin), url = URL.createObjectURL(blob);
+    if (b.dataset.act === "telecharger") {
+      const a = document.createElement("a"); a.href = url; a.download = chemin.split("/").pop(); document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } else {
+      const lecteur = document.createElement("audio"); lecteur.controls = true; lecteur.src = url; lecteur.style.display = "block"; lecteur.style.margin = "6px 0";
+      b.parentElement.querySelectorAll("audio").forEach(x => x.remove());
+      b.insertAdjacentElement("afterend", lecteur); lecteur.play().catch(() => {});
+    }
+  } catch (e) {
+    if (e.statut === 401) { ecrireMdp(""); pageConnexion("Session expirée : saisissez de nouveau le mot de passe."); return; }
+    alert("Lecture impossible : " + e.message);
+  } finally { b.disabled = false; b.textContent = texte; }
+});
+
+// Remise à zéro d'un jour de « Fluidité verbale » : deux modes (garder ou supprimer les audios).
+function reinitParole(empreinte, code, jour) {
+  const quoi = jour === "tous" ? "tous les jours" : "le jour " + jour;
+  const fond = document.createElement("div");
+  fond.className = "ov"; fond.setAttribute("role", "dialog"); fond.setAttribute("aria-modal", "true");
+  fond.innerHTML = `<div class="ov-boite"><h3>Remettre à zéro ${esc(quoi)} · ${esc(code)}</h3>
+    <p>Les séances concernées (mesures, transcriptions, notes) et le statut « fait » sont effacés : l'élève devra refaire le jour. Que faire des enregistrements audio ?</p>
+    <div class="ov-choix"><button class="btn" type="button" data-mode="garder">Remettre à zéro et GARDER les audios</button>
+      <p class="small">Les audios restent dans l'archive privée, avec une sauvegarde des mesures, notes et transcriptions de la séance. Ils restent écoutables dans « Archive audio ».</p></div>
+    <div class="ov-choix"><button class="btn btn--danger" type="button" data-mode="supprimer">Remettre à zéro et SUPPRIMER les audios</button>
+      <p class="small">Les fichiers audio sont retirés de l'archive. Ils restent toutefois récupérables dans l'historique git du dépôt privé tant que celui-ci n'est pas purgé.</p></div>
+    <button class="lien" type="button" data-mode="annuler">Annuler</button></div>`;
+  document.body.append(fond);
+  fond.addEventListener("click", async ev => {
+    const mode = ev.target.dataset && ev.target.dataset.mode;
+    if (ev.target === fond || mode === "annuler") { fond.remove(); return; }
+    if (!mode) return;
+    if (mode === "supprimer" && !confirm(`Supprimer les audios de ${quoi} pour ${code} ? Cette action retire les fichiers de l'archive.`)) return;
+    fond.querySelectorAll("button").forEach(b => { b.disabled = true; });
+    let r;
+    try { r = await appelerSuivi("/admin/parole/reinitialiser", { motdepasse: lireMdp(), empreinte, jour, audios: mode }, 90000); }
+    catch (e) {
+      fond.remove();
+      if (e.statut === 401) { ecrireMdp(""); return pageConnexion("Session expirée : saisissez de nouveau le mot de passe."); }
+      alert("Remise à zéro non effectuée : " + e.message); return;
+    }
+    fond.remove();
+    await afficher();
+    document.getElementById("message").textContent = mode === "garder"
+      ? `✓ ${code} : ${quoi} remis à zéro. Audios conservés dans l'archive (${r.audiosConserves} fichier${r.audiosConserves > 1 ? "s" : ""}), avec la sauvegarde des données.`
+      : `✓ ${code} : ${quoi} remis à zéro. ${r.audiosSupprimes} audio${r.audiosSupprimes > 1 ? "s" : ""} supprimé${r.audiosSupprimes > 1 ? "s" : ""} de l'archive.`;
+  });
 }
 const blocSeance = cle => document.querySelector(`.seance-p[data-cle="${cle}"]`);
 function notesDuFormulaire(cle) {

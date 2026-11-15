@@ -491,7 +491,13 @@ async function chargerSeances(){
   let serveur=null;
   try{ serveur=(await appelerSuivi('/parole/etat',{classe:SESSION.classe,code:SESSION.code})).seances; }catch(_){}
   const carte=new Map();
-  Object.values(lire(cleHist())||{}).forEach(s=>carte.set(String(s.seance),{...s}));
+  const hist=lire(cleHist())||{};
+  if(serveur!==null){   // le serveur fait foi : une séance envoyée puis remise à zéro par l'enseignant disparaît aussi de l'appareil
+    const presentes=new Set(serveur.map(s=>String(s.seance))); let change=false;
+    Object.keys(hist).forEach(id=>{ if(hist[id].envoye===true && !presentes.has(String(id)) && id!==SEANCE){ delete hist[id]; change=true; } });
+    if(change) ecrire(cleHist(), hist);
+  }
+  Object.values(hist).forEach(s=>carte.set(String(s.seance),{...s}));
   (serveur||[]).forEach(s=>carte.set(String(s.seance),{...(carte.get(String(s.seance))||{}),...s,envoye:true}));
   const liste=[...carte.values()].filter(s=>s.ex1||s.ex2).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   return { liste, serveurOk: serveur!==null };

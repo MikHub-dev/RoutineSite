@@ -136,6 +136,108 @@ assert.equal(r.corps.seances.find(s => s.seance === "1763299000000").audios.leng
 reponsePut = 422; r = await appel("/parole/audio", audio()); assert.equal(r.statut, 502, "échec GitHub signalé");
 await appel("/admin/parole/supprimer", { motdepasse: "secret-test", cle: sa.cle });
 
+// ---------- Archive protégée et remise à zéro d'un jour ----------
+const depotFichiers = new Map(); let sha = 0; let prive = true;
+globalThis.fetch = async (url, opt = {}) => {
+  const u = new URL(String(url)); const p = decodeURIComponent(u.pathname); const m = opt.method || "GET";
+  const rep = (corps, statut = 200) => new Response(typeof corps === "string" || corps instanceof Uint8Array ? corps : JSON.stringify(corps), { status: statut });
+  let x;
+  if ((x = p.match(/^\/repos\/[^/]+\/[^/]+$/))) return rep({ private: prive });
+  if ((x = p.match(/^\/repos\/[^/]+\/[^/]+\/git\/trees\//))) return rep({ tree: [...depotFichiers].map(([path, f]) => ({ path, type: "blob", size: f.octets.length })), truncated: false });
+  if ((x = p.match(/^\/repos\/[^/]+\/[^/]+\/contents\/(.+)$/))) {
+    const chemin = x[1];
+    if (m === "PUT") { const b = JSON.parse(opt.body); depotFichiers.set(chemin, { octets: Buffer.from(b.content, "base64"), sha: "s" + (++sha) }); return rep({ content: {} }, 201); }
+    if (m === "DELETE") { const b = JSON.parse(opt.body); const f = depotFichiers.get(chemin); if (!f || f.sha !== b.sha) return rep({}, 409); depotFichiers.delete(chemin); return rep({}); }
+    if (depotFichiers.has(chemin)) { const f = depotFichiers.get(chemin); return String(opt.headers.Accept).includes("raw") ? rep(new Uint8Array(f.octets)) : rep({ type: "file", path: chemin, sha: f.sha }); }
+    const enfants = new Map();
+    for (const [chem, f] of depotFichiers) if (chem.startsWith(chemin + "/")) { const reste = chem.slice(chemin.length + 1).split("/")[0]; enfants.set(reste, chem.slice(chemin.length + 1).includes("/") ? { type: "dir", path: chemin + "/" + reste } : { type: "file", path: chem, sha: f.sha }); }
+    return enfants.size ? rep([...enfants.values()]) : rep({}, 404);
+  }
+  return rep({}, 404);
+};
+const PWD = { motdepasse: "secret-test" };
+const seanceA = "1763400000000", seanceB = "1763400000001";
+const audioOctets = "x".repeat(3000);
+const audioB = Buffer.from(audioOctets).toString("base64");
+const aud = (seance, jour, exo) => ({ classe: "seconde", code: "MIKAZA", jour, seance, exo, mime: "audio/webm", duree: 60, audio: audioB });
+for (const [s, j] of [[seanceA, 1], [seanceB, 2]]) await appel("/parole/enregistrer", { classe: "seconde", code: "MIKAZA", jour: j, seance: s, bilan: "B" + j, ex1 });
+await appel("/parole/audio", aud(seanceA, 1, "ex1")); await appel("/parole/audio", aud(seanceA, 1, "ex2")); await appel("/parole/audio", aud(seanceB, 2, "ex1"));
+await appel("/valider", { classe: "seconde", code: "MIKAZA", routine: "parole", jour: 1 });
+await appel("/valider", { classe: "seconde", code: "MIKAZA", routine: "parole", jour: 2 });
+assert.equal(depotFichiers.size, 3);
+r = await appel("/admin/etat", PWD);
+const emp = r.corps.eleves.find(e => e.code === "MIKAZA").empreinte;
+
+// accès à l'archive : mot de passe obligatoire
+r = await appel("/admin/parole/archive", { motdepasse: "faux" }); assert.equal(r.statut, 401, "archive : mot de passe obligatoire");
+r = await appel("/admin/parole/archive", {}); assert.equal(r.statut, 401);
+r = await appel("/admin/parole/archive", PWD);
+assert.equal(r.statut, 200); assert.equal(r.corps.fichiers.length, 3);
+assert.deepEqual(r.corps.fichiers.map(f => f.jour).sort(), [1, 1, 2]);
+const cheminA = r.corps.fichiers.find(f => f.jour === 1).chemin;
+const lire = async (corps, origine = "https://mikhub-dev.github.io") => worker.fetch(new Request("https://w.example/admin/parole/audio", { method: "POST", headers: { "Content-Type": "application/json", Origin: origine, "CF-Connecting-IP": "1.2.3.4" }, body: JSON.stringify(corps) }), env);
+let resp = await lire({ motdepasse: "faux", chemin: cheminA }); assert.equal(resp.status, 401, "lecture d'un audio : mot de passe obligatoire");
+resp = await lire({ chemin: cheminA }); assert.equal(resp.status, 401);
+resp = await lire({ motdepasse: "secret-test", chemin: "../../etc/passwd" }); assert.equal(resp.status, 400, "chemin hors archive refusé");
+resp = await lire({ motdepasse: "secret-test", chemin: "audio/seconde/MIKAZA/jour-001/../../../x.webm" }); assert.equal(resp.status, 400);
+resp = await lire({ motdepasse: "secret-test", chemin: "audio/seconde/MIKAZA/jour-009/inconnu.webm" }); assert.equal(resp.status, 404);
+resp = await lire({ motdepasse: "secret-test", chemin: cheminA });
+assert.equal(resp.status, 200); assert.equal(resp.headers.get("Content-Type"), "audio/webm"); assert.equal(resp.headers.get("Cache-Control"), "no-store");
+assert.equal(Buffer.from(await resp.arrayBuffer()).toString(), audioOctets, "le fichier est servi tel quel");
+prive = false; await env.SUIVI.delete("audio:prive:MikHub-dev/RoutineSite-audio");   // le cache d'une minute est vidé
+r = await appel("/admin/parole/archive", PWD); assert.equal(r.statut, 503, "dépôt public : archive inaccessible");
+resp = await lire({ motdepasse: "secret-test", chemin: cheminA }); assert.equal(resp.status, 503);
+prive = true; await env.SUIVI.delete("audio:prive:MikHub-dev/RoutineSite-audio");
+
+// remise à zéro : validations
+r = await appel("/admin/parole/reinitialiser", { motdepasse: "faux", empreinte: emp, jour: 1, audios: "garder" }); assert.equal(r.statut, 401);
+r = await appel("/admin/parole/reinitialiser", { ...PWD, empreinte: emp, jour: 1 }); assert.equal(r.statut, 400, "le choix garder/supprimer est obligatoire");
+r = await appel("/admin/parole/reinitialiser", { ...PWD, empreinte: emp, jour: 1, audios: "peut-etre" }); assert.equal(r.statut, 400);
+r = await appel("/admin/parole/reinitialiser", { ...PWD, empreinte: emp, jour: 0, audios: "garder" }); assert.equal(r.statut, 400);
+r = await appel("/admin/reinitialiser", { ...PWD, empreinte: emp, routine: "parole", jour: 1 }); assert.equal(r.statut, 400, "la remise à zéro générique ne sert pas pour la parole");
+
+// dépôt devenu public : rien n'est touché
+prive = false;
+r = await appel("/admin/parole/reinitialiser", { ...PWD, empreinte: emp, jour: 1, audios: "supprimer" });
+assert.equal(r.statut, 503); assert.equal(depotFichiers.size, 3, "aucun audio supprimé");
+r = await appel("/parole/etat", { classe: "seconde", code: "MIKAZA" }); assert.equal(r.corps.seances.length, 2, "aucune séance effacée");
+prive = true; await env.SUIVI.delete("audio:prive:MikHub-dev/RoutineSite-audio");
+
+// jour 1, en GARDANT les audios
+r = await appel("/admin/parole/reinitialiser", { ...PWD, empreinte: emp, jour: 1, audios: "garder" });
+assert.equal(r.statut, 200); assert.equal(r.corps.seances, 1); assert.equal(r.corps.joursRemis, 1); assert.equal(r.corps.audiosSupprimes, 0); assert.equal(r.corps.audiosConserves, 2);
+assert.equal(r.corps.instantanes.length, 1);
+const chemins = [...depotFichiers.keys()];
+assert.equal(chemins.filter(c => c.includes("jour-001") && c.endsWith(".webm")).length, 2, "les deux audios du jour 1 sont conservés");
+const snap = chemins.find(c => /jour-001\/reinitialisation-\d{8}T\d{6}\.json$/.test(c));
+assert.ok(snap, "les données de la séance sont sauvegardées avec les audios");
+assert.equal(JSON.parse(depotFichiers.get(snap).octets.toString()).seances[0].ex1.mots, 31);
+r = await appel("/parole/etat", { classe: "seconde", code: "MIKAZA" });
+assert.deepEqual(r.corps.seances.map(s => s.jour), [2], "le jour 2 n'est pas touché");
+r = await appel("/etat", { classe: "seconde", code: "MIKAZA" }); assert.deepEqual(r.corps.jours.parole, [2], "le jour 1 est de nouveau « non fait »");
+r = await appel("/admin/parole/archive", PWD); assert.equal(r.corps.fichiers.length, 4, "l'archive garde audios et sauvegarde des données");
+
+// jour 2, en SUPPRIMANT les audios
+r = await appel("/admin/parole/reinitialiser", { ...PWD, empreinte: emp, jour: 2, audios: "supprimer" });
+assert.equal(r.statut, 200); assert.equal(r.corps.audiosSupprimes, 1); assert.equal(r.corps.audiosConserves, 0);
+assert.ok(![...depotFichiers.keys()].some(c => c.includes("jour-002")), "l'audio du jour 2 est supprimé de l'archive");
+assert.equal([...depotFichiers.keys()].filter(c => c.includes("jour-001")).length, 3, "le jour 1 n'est pas touché");
+r = await appel("/parole/etat", { classe: "seconde", code: "MIKAZA" }); assert.equal(r.corps.seances.length, 0);
+r = await appel("/etat", { classe: "seconde", code: "MIKAZA" }); assert.deepEqual(r.corps.jours.parole, []);
+
+// échec GitHub en cours de route : le suivi n'est pas effacé
+await appel("/parole/enregistrer", { classe: "seconde", code: "MIKAZA", jour: 5, seance: "1763500000000", bilan: "B5", ex1 });
+await appel("/parole/audio", aud("1763500000000", 5, "ex1"));
+const fetchOk = globalThis.fetch;
+globalThis.fetch = async (url, opt = {}) => (opt.method === "DELETE") ? new Response("{}", { status: 500 }) : fetchOk(url, opt);
+r = await appel("/admin/parole/reinitialiser", { ...PWD, empreinte: emp, jour: 5, audios: "supprimer" });
+assert.equal(r.statut, 502);
+globalThis.fetch = fetchOk;
+r = await appel("/parole/etat", { classe: "seconde", code: "MIKAZA" }); assert.equal(r.corps.seances.length, 1, "séance conservée si la suppression a échoué");
+r = await appel("/admin/parole/reinitialiser", { ...PWD, empreinte: emp, jour: "tous", audios: "supprimer" });
+assert.equal(r.statut, 200); assert.ok(![...depotFichiers.keys()].some(c => c.includes("jour-005")), "« tous » supprime aussi les audios restants");
+r = await appel("/admin/parole", PWD);   // mot de passe correct : remet le compteur d'échecs à zéro
+
 for (let i = 0; i < 10; i++) await appel("/admin/etat", { motdepasse: "faux" });
 r = await appel("/admin/etat", { motdepasse: "secret-test" });
 assert.equal(r.statut, 429, "blocage après trop d'échecs");
