@@ -92,6 +92,50 @@ r = await appel("/admin/parole/supprimer", { motdepasse: "secret-test", cle: cle
 assert.deepEqual(r.corps, { ok: true, supprimees: 1 });
 r = await appel("/parole/etat", { classe: "seconde", code: "MIKAZA" }); assert.equal(r.corps.seances.length, 0);
 
+// ---------- Archivage audio (dépôt GitHub privé) ----------
+const appelsGitHub = []; let depotEstPrive = true; let reponsePut = 201;
+globalThis.fetch = async (url, opt = {}) => {
+  appelsGitHub.push({ url: String(url), methode: opt.method, corps: opt.body ? JSON.parse(opt.body) : null, auth: opt.headers && opt.headers.Authorization });
+  if (opt.method === "GET") return new Response(JSON.stringify({ private: depotEstPrive }), { status: 200 });
+  return new Response(JSON.stringify({ content: {} }), { status: reponsePut });
+};
+const audioB64 = Buffer.from("x".repeat(3000)).toString("base64");
+const enreg = { classe: "seconde", code: "MIKAZA", jour: 1, seance: "1763299000000", bilan: "B", ex1 };
+const audio = (extra = {}) => ({ classe: "seconde", code: "MIKAZA", jour: 1, seance: "1763299000000", exo: "ex1", mime: "audio/webm;codecs=opus", duree: 60, audio: audioB64, ...extra });
+await appel("/parole/enregistrer", enreg);
+
+r = await appel("/parole/audio", audio());
+assert.equal(r.statut, 503, "archivage non configuré : refusé proprement");
+env.GITHUB_TOKEN = "ghp_test"; env.AUDIO_REPO = "MikHub-dev/RoutineSite-audio";
+r = await appel("/parole/audio", audio({ code: "MARCZA" })); assert.equal(r.statut, 403, "code d'une autre classe refusé");
+r = await appel("/parole/audio", audio({ mime: "text/html" })); assert.equal(r.statut, 400, "format non audio refusé");
+r = await appel("/parole/audio", audio({ exo: "ex9" })); assert.equal(r.statut, 400, "exercice invalide");
+r = await appel("/parole/audio", audio({ audio: "pas du base64 !!" })); assert.equal(r.statut, 400);
+r = await appel("/parole/audio", audio({ audio: "A".repeat(4600000) })); assert.equal(r.statut, 413, "fichier trop gros");
+assert.equal(appelsGitHub.length, 0, "aucun appel GitHub tant que la demande est invalide");
+
+depotEstPrive = false;
+r = await appel("/parole/audio", audio());
+assert.equal(r.statut, 503, "dépôt PUBLIC : l'archivage est refusé");
+assert.ok(!appelsGitHub.some(a => a.methode === "PUT"), "rien n'est écrit dans un dépôt public");
+
+depotEstPrive = true;
+r = await appel("/parole/audio", audio());
+assert.equal(r.statut, 200);
+const put = appelsGitHub.find(a => a.methode === "PUT");
+assert.match(put.url, /api\.github\.com\/repos\/MikHub-dev\/RoutineSite-audio\/contents\/audio\/seconde\/MIKAZA\/jour-001\/1763299000000-ex1-\d{8}T\d{6}\.webm$/);
+assert.equal(put.corps.content, audioB64); assert.equal(put.auth, "Bearer ghp_test");
+r = await appel("/parole/etat", { classe: "seconde", code: "MIKAZA" });
+assert.ok(!JSON.stringify(r.corps).includes("RoutineSite-audio"), "l'élève ne voit pas l'emplacement de l'archive");
+r = await appel("/admin/parole", { motdepasse: "secret-test" });
+const sa = r.corps.seances.find(s => s.seance === "1763299000000");
+assert.equal(sa.audios.length, 1); assert.equal(sa.audios[0].depot, "MikHub-dev/RoutineSite-audio"); assert.equal(sa.audios[0].exo, "ex1");
+await appel("/parole/enregistrer", { ...enreg, bilan: "B2" });
+r = await appel("/admin/parole", { motdepasse: "secret-test" });
+assert.equal(r.corps.seances.find(s => s.seance === "1763299000000").audios.length, 1, "réenregistrer la séance garde les références audio");
+reponsePut = 422; r = await appel("/parole/audio", audio()); assert.equal(r.statut, 502, "échec GitHub signalé");
+await appel("/admin/parole/supprimer", { motdepasse: "secret-test", cle: sa.cle });
+
 for (let i = 0; i < 10; i++) await appel("/admin/etat", { motdepasse: "faux" });
 r = await appel("/admin/etat", { motdepasse: "secret-test" });
 assert.equal(r.statut, 429, "blocage après trop d'échecs");

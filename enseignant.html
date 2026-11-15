@@ -268,6 +268,7 @@ function seanceHtml(s) {
   const etat = s.notes ? `<span style="color:var(--vert)">✓ noté${s.notesLe ? " le " + esc(dateFr(s.notesLe)) : ""}</span>` : `<span style="color:var(--rouge)">à noter</span>`;
   return `<div class="seance-p" id="seance-${esc(s.cle.replace(/:/g, "_"))}" data-cle="${esc(s.cle)}">
     <h3>${esc(s.code)} · ${esc(nomClasse(s.classe))} · jour ${esc(s.jour)}<small>${esc(dateFr(s.date))} · ${etat}</small></h3>
+    ${audiosHtml(s)}
     ${s.bilan ? `<details><summary class="small">Bilan envoyé (à coller à Claude)</summary><pre>${esc(s.bilan)}</pre><button class="btn btn--secondaire" type="button" onclick="copierBilan('${esc(s.cle)}')">Copier le bilan</button></details>` : ""}
     ${exos}
     <label class="small" for="retour-${esc(s.cle.replace(/:/g, "_"))}">Retour de Claude (facultatif ; la ligne [NOTES] remplit les champs ci-dessus)</label>
@@ -278,6 +279,12 @@ function seanceHtml(s) {
   </div>`;
 }
 
+function audiosHtml(s) {
+  const a = s.audios || [];
+  if (!a.length) return `<p class="small">Aucun enregistrement audio archivé pour cette séance.</p>`;
+  return `<p class="small">Enregistrements archivés (dépôt privé GitHub) : ${a.map(x =>
+    `<a class="lien" href="https://github.com/${esc(x.depot)}/blob/HEAD/${esc(x.chemin)}" target="_blank" rel="noopener">${x.exo === "ex1" ? "exercice 1" : "exercice 2"}${x.duree ? " (" + nf(x.duree, 0) + " s)" : ""} · ${esc(dateFr(x.date))}</a>`).join(" · ")}</p>`;
+}
 const blocSeance = cle => document.querySelector(`.seance-p[data-cle="${cle}"]`);
 function notesDuFormulaire(cle) {
   const b = blocSeance(cle), notes = { ex1: {}, ex2: {} };

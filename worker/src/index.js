@@ -1,4 +1,4 @@
-// Version : 1.1 (séances de « Fluidité verbale »)
+// Version : 1.2 (séances de « Fluidité verbale » + archivage audio dans un dépôt GitHub privé)
 // Worker « routinesite-suivi » : suivi des jours faits par élève pour RoutineSite.
 //
 // Routes (toutes en POST, JSON) :
@@ -13,6 +13,10 @@
 //   /admin/parole       { motdepasse }                        -> toutes les séances de tous les élèves
 //   /admin/parole/noter { motdepasse, cle, notes, retour }    -> enregistre les notes et le retour de Claude
 //   /admin/parole/supprimer { motdepasse, cle }               -> supprime une séance
+//   /parole/audio       { classe, code, jour, seance, exo, mime, duree, audio(base64) } -> archive l'enregistrement dans un dépôt GitHub PRIVÉ
+//
+// Archivage audio : secret GITHUB_TOKEN (jeton limité au dépôt d'archive, droit « Contents : lecture et écriture »)
+// et variable AUDIO_REPO (« propriétaire/dépôt »). Le Worker refuse d'écrire si le dépôt n'est pas privé.
 //
 // Secret : ADMIN_PASSWORD (le même mot de passe enseignant que MathSite).
 // Stockage KV « SUIVI » : clé  fait:<empreinte>:<routine>:<jour>  ->  { code, classe, date }
@@ -49,6 +53,7 @@ export default {
       if (chemin === "/admin/reinitialiser") return await adminReinitialiser(env, request, corps, cors);
       if (chemin === "/parole/enregistrer") return await paroleEnregistrer(env, corps, cors);
       if (chemin === "/parole/etat") return await paroleEtat(env, corps, cors);
+      if (chemin === "/parole/audio") return await paroleAudio(env, corps, cors);
       if (chemin === "/admin/parole") return await adminParole(env, request, corps, cors);
       if (chemin === "/admin/parole/noter") return await adminParoleNoter(env, request, corps, cors);
       if (chemin === "/admin/parole/supprimer") return await adminParoleSupprimer(env, request, corps, cors);
@@ -171,10 +176,67 @@ async function paroleEnregistrer(env, c, cors) {
     code: eleve.code, classe: c.classe, jour, seance: c.seance,
     date: ancien ? ancien.date : maintenant, maj: maintenant,
     bilan: texteBorne(c.bilan, 8000), ex1: exerciceValide(c.ex1), ex2: exerciceValide(c.ex2),
-    notes: ancien ? ancien.notes : null, retour: ancien ? ancien.retour : ""
+    notes: ancien ? ancien.notes : null, retour: ancien ? ancien.retour : "", audios: ancien ? (ancien.audios || []) : []
   };
   await env.SUIVI.put(cle, JSON.stringify(valeur));
   return json({ ok: true }, 200, cors);
+}
+
+// ---------- Archivage des enregistrements audio (dépôt GitHub privé) ----------
+const MAX_AUDIO_BASE64 = 4500000;          // ≈ 3,3 Mo d'audio
+const TYPES_AUDIO = { "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/mpeg": "mp3" };
+
+function appelGitHub(env, methode, chemin, corps) {
+  return fetch("https://api.github.com" + chemin, {
+    method: methode,
+    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, "User-Agent": "routinesite-suivi", Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json" },
+    body: corps ? JSON.stringify(corps) : undefined
+  });
+}
+
+// Vrai seulement si le dépôt d'archive existe et est PRIVÉ (résultat gardé une heure).
+async function depotPrive(env, depot) {
+  const cle = `audio:prive:${depot}`;
+  if (await env.SUIVI.get(cle)) return true;
+  const r = await appelGitHub(env, "GET", `/repos/${depot}`);
+  if (!r.ok) return false;
+  const d = await r.json().catch(() => ({}));
+  if (d.private !== true) return false;
+  await env.SUIVI.put(cle, "1", { expirationTtl: 3600 });
+  return true;
+}
+
+async function paroleAudio(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  const jour = Number(c.jour);
+  if (!Number.isInteger(jour) || jour < 1 || jour > 100) return json({ erreur: "Jour invalide" }, 400, cors);
+  if (typeof c.seance !== "string" || !/^\d{10,14}$/.test(c.seance)) return json({ erreur: "Séance invalide" }, 400, cors);
+  if (c.exo !== "ex1" && c.exo !== "ex2") return json({ erreur: "Exercice invalide" }, 400, cors);
+  const ext = TYPES_AUDIO[String(c.mime || "").split(";")[0].trim().toLowerCase()];
+  if (!ext) return json({ erreur: "Format audio non accepté" }, 400, cors);
+  if (typeof c.audio !== "string" || c.audio.length < 100 || !/^[A-Za-z0-9+/]+={0,2}$/.test(c.audio)) return json({ erreur: "Audio invalide" }, 400, cors);
+  if (c.audio.length > MAX_AUDIO_BASE64) return json({ erreur: "Enregistrement trop volumineux" }, 413, cors);
+  const depot = env.AUDIO_REPO || "";
+  if (!env.GITHUB_TOKEN || !/^[\w.-]+\/[\w.-]+$/.test(depot)) return json({ erreur: "Archivage audio non configuré" }, 503, cors);
+  if (!(await depotPrive(env, depot))) return json({ erreur: "Archivage refusé : le dépôt d'archive doit exister et être privé" }, 503, cors);
+
+  const maintenant = new Date();
+  const horodatage = maintenant.toISOString().replace(/[-:]/g, "").slice(0, 15);
+  const chemin = `audio/${c.classe}/${eleve.code}/jour-${String(jour).padStart(3, "0")}/${c.seance}-${c.exo}-${horodatage}.${ext}`;
+  const r = await appelGitHub(env, "PUT", `/repos/${depot}/contents/${chemin}`, {
+    message: `Audio ${eleve.code} jour ${jour} ${c.exo}`, content: c.audio, ...(env.AUDIO_BRANCH ? { branch: env.AUDIO_BRANCH } : {})
+  });
+  if (!r.ok) return json({ erreur: `Dépôt d'archive : refus de GitHub (${r.status})` }, 502, cors);
+
+  const cleSeance = `parole:${eleve.empreinte}:${jour}:${c.seance}`;
+  const v = JSON.parse((await env.SUIVI.get(cleSeance)) || "null");
+  if (v) {
+    v.audios = [...(v.audios || []).slice(-19), { exo: c.exo, depot, chemin, date: maintenant.toISOString(), taille: Math.floor(c.audio.length * 3 / 4), duree: nombreOuNull(c.duree) }];
+    await env.SUIVI.put(cleSeance, JSON.stringify(v));
+  }
+  return json({ ok: true, chemin }, 200, cors);
 }
 
 async function seancesDe(env, prefixe) {
@@ -189,7 +251,7 @@ async function seancesDe(env, prefixe) {
 async function paroleEtat(env, c, cors) {
   const eleve = await identifier(env, c.classe, c.code);
   if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
-  const seances = (await seancesDe(env, `parole:${eleve.empreinte}:`)).map(({ cle, bilan, ...reste }) => reste);
+  const seances = (await seancesDe(env, `parole:${eleve.empreinte}:`)).map(({ cle, bilan, audios, ...reste }) => reste);
   return json({ ok: true, seances }, 200, cors);
 }
 

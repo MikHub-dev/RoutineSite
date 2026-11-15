@@ -96,6 +96,7 @@
       <div class="word"><small>Mot 1 · point de départ de l'association</small><strong id="wordA">…</strong></div>
       <div class="word"><small>Mot 2 · sujet de l'histoire</small><strong id="wordB">…</strong></div>
     </div>
+    <p class="small">Information : ton enregistrement audio est envoyé dans une archive privée, accessible à ton enseignant seulement, pour pouvoir être réanalysé en cas de problème.</p>
     <p class="small">Conseil : place-toi dans une pièce calme, parle à 20–30 cm du micro. Pendant les 3 secondes avant chaque exercice, reste silencieux : cela permet de mesurer le bruit de fond.</p>
   </div>
 
@@ -265,6 +266,7 @@ function creerExercice(cfg){
       <textarea id="${cfg.id}-txt" rows="4" data-el="txt"></textarea>
       <div class="row" style="margin-top:6px"><button data-act="recalc">Recalculer avec mon texte</button><button data-act="redo">↻ Recommencer</button></div>
       <div data-el="replay"></div>
+      <p class="save" data-el="archive"></p>
       <details><summary>Détails techniques</summary><pre class="small" data-el="debug" style="white-space:pre-wrap"></pre></details>
     </div>`;
   const $=s=>root.querySelector(`[data-el="${s}"]`);
@@ -305,7 +307,7 @@ function creerExercice(cfg){
 
     // 2) enregistrement
     const chunks=[]; let rec=null;
-    try{ rec=new MediaRecorder(stream); rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); }; rec.start(); }catch(_){ rec=null; }
+    try{ try{ rec=new MediaRecorder(stream,{audioBitsPerSecond:32000}); }catch(_){ rec=new MediaRecorder(stream); } rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); }; rec.start(); }catch(_){ rec=null; }
     let reco=null; const live=$('live');
     if(SR){
       reco=demarrerReco(({finalTxt, interim})=>{ live.innerHTML=''; live.append(document.createTextNode(finalTxt)); const sp=document.createElement('span'); sp.className='interim'; sp.textContent=interim; live.append(sp); });
@@ -332,10 +334,11 @@ function creerExercice(cfg){
     await attendre(250);
 
     const audio = analyserAudio(frames, duree, seuil);
-    const res={cfg, duree, seuil, plancher, frames, audio, texte:texte.trim(), blobUrl: chunks.length? URL.createObjectURL(new Blob(chunks,{type:(rec&&rec.mimeType)||'audio/webm'})):null, reconnue: !!SR};
+    const blob = chunks.length ? new Blob(chunks,{type:(rec&&rec.mimeType)||'audio/webm'}) : null;
+    const res={cfg, duree, seuil, plancher, frames, audio, texte:texte.trim(), blob, blobUrl: blob? URL.createObjectURL(blob):null, reconnue: !!SR};
     res.texteAnalyse=analyserTexte(res.texte, cfg.motImpose);
     resultats[cfg.id]=res;
-    live.classList.add('hidden'); afficher(res); btnStart.disabled=false; majBilanBtn(); sauver();
+    live.classList.add('hidden'); afficher(res); btnStart.disabled=false; majBilanBtn(); sauver().then(()=>archiverAudio(cfg.id, res));
     $('status').textContent = SR ? 'Terminé. Relis la transcription et corrige-la si besoin.' : "Terminé. Saisis ton texte dans la zone ci-dessous (la reconnaissance vocale n'est pas disponible ici), puis « Recalculer ».";
   }
 
@@ -458,6 +461,21 @@ async function sauver(){
   }
   rafraichirSuivi();
 }
+// Envoie l'enregistrement audio du dernier exercice au Worker, qui l'archive dans un dépôt GitHub privé.
+function etatArchive(ex, ok, msg){ const z=document.querySelector('#'+ex+' [data-el="archive"]'); if(z){ z.textContent=msg; z.className='save '+(ok?'ok':'ko'); } }
+async function archiverAudio(ex, res){
+  if(!SESSION || !res || !res.blob) { etatArchive(ex,false,"Aucun enregistrement audio à archiver (le navigateur n'a pas fourni d'audio)."); return; }
+  if(res.blob.size > 3*1024*1024){ etatArchive(ex,false,"Enregistrement trop volumineux pour l'archive : il n'a pas été envoyé."); return; }
+  etatArchive(ex,true,"Archivage de l'enregistrement audio…");
+  try{
+    const b64 = await new Promise((ok,ko)=>{ const fr=new FileReader(); fr.onload=()=>ok(String(fr.result).split(',')[1]); fr.onerror=()=>ko(new Error('lecture audio')); fr.readAsDataURL(res.blob); });
+    await appelerSuivi('/parole/audio', { classe:SESSION.classe, code:SESSION.code, jour:JOUR, seance:SEANCE, exo:ex, mime:res.blob.type||'audio/webm', duree:res.duree, audio:b64 }, 60000);
+    etatArchive(ex,true,"✓ Enregistrement audio archivé (dépôt privé).");
+  }catch(e){
+    etatArchive(ex,false,"⚠ Audio non archivé : "+e.message+". L'analyse reste enregistrée ; tu peux réécouter ta prise de parole ci-dessus.");
+  }
+}
+
 // Renvoie les séances restées sur l'appareil (serveur injoignable ou pas encore mis à jour).
 async function renvoyerEnAttente(){
   const hist=lire(cleHist()); if(!hist) return;

@@ -104,10 +104,10 @@ function ajouterJour(routine, code, n) {
 const URL_SUIVI = "https://routinesite-suivi.mikhub-dev.workers.dev";
 const CLE_ATTENTE = "routinesite:attente";
 
-async function appelerSuivi(chemin, corps) {
+async function appelerSuivi(chemin, corps, delai = 6000) {
   if (!URL_SUIVI) throw new Error("suivi non configuré");
   const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), 6000);
+  const t = setTimeout(() => ctl.abort(), delai);
   try {
     const r = await fetch(URL_SUIVI.replace(/\/+$/, "") + chemin, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps), signal: ctl.signal
