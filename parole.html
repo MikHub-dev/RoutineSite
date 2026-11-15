@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parole · RoutineSite</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  :root{
+    --bg:var(--fond); --card:var(--panneau); --ink:var(--texte); --muted:var(--doux); --line:var(--bord);
+    --accent:var(--bleu); --accent-ink:#0f1116; --voice:var(--bleu); --silence:#3a3f4b; --pause:#e3b053;
+    --ok:var(--vert); --warn:#e3b053; --bad:var(--rouge);
+  }
+  .parole{max-width:860px;margin:0 auto}
+  .parole[hidden]{display:none}
+  .parole h1{font-size:1.6rem}
+
+    *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:860px;margin:0 auto;padding:20px 16px 60px}
+  h1{font-size:1.5rem;margin:.2em 0 .1em}
+  h2{font-size:1.15rem;margin:0 0 .4em}
+  .sub{color:var(--muted);margin:0 0 1em}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:16px 0}
+  .banner{border-left:4px solid var(--warn);background:var(--card);padding:10px 14px;border-radius:8px;margin:12px 0;border:1px solid var(--line);border-left-width:4px}
+  .words{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 14px}
+  .word{flex:1 1 200px;border:1px dashed var(--line);border-radius:12px;padding:10px 14px}
+  .word small{display:block;color:var(--muted)}
+  .word strong{font-size:1.7rem;letter-spacing:.02em}
+  .consigne{color:var(--muted);margin:0 0 12px}
+  button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:9px 16px}
+  button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .status{font-weight:600;min-height:1.5em}
+  .timer{font-variant-numeric:tabular-nums;font-size:1.6rem;font-weight:700}
+  .bar{height:8px;border-radius:6px;background:var(--silence);overflow:hidden;margin:8px 0}
+  .bar > i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+  .meter{height:6px;border-radius:6px;background:var(--silence);overflow:hidden;width:160px}
+  .meter > i{display:block;height:100%;width:0;background:var(--ok)}
+  .live{min-height:3.2em;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:10px 0;color:var(--ink)}
+  .live .interim{color:var(--muted)}
+  .hidden{display:none}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin:12px 0}
+  .tile{border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+  .tile .k{color:var(--muted);font-size:.85rem}
+  .tile .v{font-size:1.35rem;font-weight:700}
+  .tile .h{font-size:.85rem;color:var(--muted)}
+  .tag-ok{color:var(--ok)} .tag-warn{color:var(--warn)} .tag-bad{color:var(--bad)}
+  canvas{width:100%;height:64px;display:block;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+  .legend{display:flex;gap:14px;font-size:.82rem;color:var(--muted);margin:4px 0 10px;flex-wrap:wrap}
+  .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+  textarea{width:100%;font:inherit;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--card);color:var(--ink);resize:vertical}
+  audio{width:100%;margin:6px 0}
+  details{margin-top:8px;color:var(--muted)}
+  .small{font-size:.86rem;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<header id="navbar">
+  <div class="nav-left"><a class="famzak-retour" href="https://famzak.github.io/" title="Retour à FamZakSites" style="flex:none;white-space:nowrap;font-size:.85rem;color:#9fb3d6;text-decoration:none;margin-right:1rem">&larr; FamZakSites</a>
+    <div class="logo-mark" aria-hidden="true">30'</div>
+    <div class="logo-text">
+      <span class="logo">RoutineSite</span>
+      <span class="logo-tagline">30 minutes par jour</span>
+    </div>
+  </div>
+  <nav class="nav-links" aria-label="Navigation">
+    <a href="index.html">Accueil</a>
+  </nav>
+</header>
+
+<main class="page parole" id="contenu" hidden>
+
+  <h1>Fluidité verbale — Jour <span id="jourN">1</span> sur 100</h1>
+  <p class="sub">Routine de test (POC) · deux exercices de parole, mesurés dans ton navigateur. Rien n'est envoyé nulle part : tes enregistrements restent sur ton appareil.</p>
+
+  <div id="compat" class="banner hidden"></div>
+
+  <div class="card" id="intro">
+    <h2>Les mots du jour</h2>
+    <div class="words">
+      <div class="word"><small>Mot 1 · point de départ de l'association</small><strong id="wordA">…</strong></div>
+      <div class="word"><small>Mot 2 · sujet de l'histoire</small><strong id="wordB">…</strong></div>
+    </div>
+    <p class="small">Conseil : place-toi dans une pièce calme, parle à 20–30 cm du micro. Pendant les 3 secondes avant chaque exercice, reste silencieux : cela permet de mesurer le bruit de fond.</p>
+  </div>
+
+  <section class="card" id="ex1"></section>
+  <section class="card" id="ex2"></section>
+
+  <section class="card" id="bilan">
+    <h2>Bilan du jour</h2>
+    <p class="consigne">Termine au moins un exercice, puis copie le bilan et colle-le à Claude dans la conversation du projet.</p>
+    <div class="row"><button id="btnBilan" class="primary" disabled>Générer le bilan</button><button id="btnCopy" disabled>Copier</button><span id="copyMsg" class="small"></span></div>
+    <textarea id="bilanTxt" rows="12" placeholder="Le bilan apparaîtra ici." readonly></textarea>
+  </section>
+
+  <section class="card" id="retour">
+    <h2>Retour de Claude</h2>
+    <p class="consigne">Colle ici le retour reçu : tu peux l'écouter lu à voix haute (voix de synthèse de ton navigateur).</p>
+    <textarea id="retourTxt" rows="6" placeholder="Colle le retour de Claude ici."></textarea>
+    <div class="row" style="margin-top:8px"><button id="btnLire" class="primary">▶ Lire à voix haute</button><button id="btnStopLire">■ Stop</button><span id="ttsMsg" class="small"></span></div>
+  </section>
+</main>
+
+<script src="commun.js"></script>
+<script>
+
+// ==== PURE START (fonctions testées hors navigateur)
+function normaliserTexte(s){return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9'\s-]/g,' ').replace(/\s+/g,' ').trim();}
+
+function detectPitch(buf, sr){
+  const n=buf.length, minLag=Math.floor(sr/400), maxLag=Math.min(Math.floor(sr/70), n-2);
+  let mean=0; for(let i=0;i<n;i++) mean+=buf[i]; mean/=n;
+  let e0=0; for(let i=0;i<n;i++){const v=buf[i]-mean; e0+=v*v;}
+  if(e0<1e-5) return null;
+  const corr=new Float32Array(maxLag+2);
+  let max=0;
+  for(let lag=minLag; lag<=maxLag; lag++){
+    let s=0; for(let i=0;i<n-lag;i++) s+=(buf[i]-mean)*(buf[i+lag]-mean);
+    const c=(s/e0)*(n/(n-lag));
+    corr[lag]=c; if(c>max) max=c;
+  }
+  if(max<0.45) return null;
+  const thr=max*0.9; let best=-1;
+  for(let lag=minLag+1; lag<maxLag; lag++){
+    if(corr[lag]>=thr && corr[lag]>=corr[lag-1] && corr[lag]>=corr[lag+1]){best=lag;break;}
+  }
+  if(best<0) return null;
+  const a=corr[best-1], b=corr[best], c=corr[best+1], d=(a-2*b+c);
+  const shift = d!==0 ? 0.5*(a-c)/d : 0;
+  return sr/(best+shift);
+}
+
+function mediane(arr){ if(!arr.length) return 0; const s=[...arr].sort((x,y)=>x-y), m=s.length>>1; return s.length%2? s[m] : (s[m-1]+s[m])/2; }
+function ecartType(arr){ if(arr.length<2) return 0; const m=arr.reduce((a,b)=>a+b,0)/arr.length; return Math.sqrt(arr.reduce((a,b)=>a+(b-m)*(b-m),0)/arr.length); }
+function moyenne(arr){ return arr.length? arr.reduce((a,b)=>a+b,0)/arr.length : 0; }
+
+// frames: [{t, rms, f0}] toutes les ~50 ms ; seuil : niveau RMS au-dessus duquel on considère que l'on parle
+function analyserAudio(frames, duree, seuil, opts){
+  const dt = opts&&opts.dt || 0.05, minPause = opts&&opts.minPause || 0.7, blanc = opts&&opts.blanc || 2.0;
+  const n=frames.length;
+  let voiced = frames.map(f=>f.rms>seuil);
+  // supprime les petits parasites (< 3 trames = 150 ms)
+  let i=0;
+  while(i<n){
+    if(voiced[i]){ let j=i; while(j<n && voiced[j]) j++; if(j-i<3) for(let k=i;k<j;k++) voiced[k]=false; i=j; } else i++;
+  }
+  const first = voiced.indexOf(true);
+  const last = voiced.lastIndexOf(true);
+  const res = {aParle: first>=0, delaiInitial:0, silenceFinal:0, pauses:[], nbPauses:0, nbBlancs:0, plusLongue:0, totalPauses:0, tempsActif:0,
+               hauteur:{mediane:0, ecartSt:0, etendueSt:0, n:0}, volume:{moyDb:0, ecartDb:0, tendanceDb:0}, voiced};
+  if(first<0){ res.delaiInitial=duree; res.silenceFinal=0; return res; }
+  res.delaiInitial = frames[first].t;
+  res.silenceFinal = Math.max(0, duree - (frames[last].t + dt));
+  i=first;
+  while(i<=last){
+    if(!voiced[i]){ let j=i; while(j<=last && !voiced[j]) j++; const len=(j-i)*dt;
+      if(len>=minPause){ res.pauses.push({debut:frames[i].t, duree:len}); }
+      i=j; } else i++;
+  }
+  res.nbPauses=res.pauses.length;
+  res.nbBlancs=res.pauses.filter(p=>p.duree>=blanc).length;
+  res.plusLongue=res.pauses.reduce((m,p)=>Math.max(m,p.duree),0);
+  res.totalPauses=res.pauses.reduce((s,p)=>s+p.duree,0);
+  res.tempsActif=Math.max(0.001, duree - res.delaiInitial - res.silenceFinal - res.totalPauses);
+  // hauteur
+  const f0s=[]; for(let k=0;k<n;k++) if(voiced[k] && frames[k].f0) f0s.push(frames[k].f0);
+  if(f0s.length>=10){
+    const med=mediane(f0s);
+    let st=f0s.map(f=>12*Math.log2(f/med)).filter(v=>Math.abs(v)<=12);
+    if(st.length>=10){
+      const s=[...st].sort((a,b)=>a-b);
+      res.hauteur={mediane:med, ecartSt:ecartType(st), etendueSt:s[Math.floor(s.length*0.9)]-s[Math.floor(s.length*0.1)], n:st.length};
+    }
+  }
+  // volume (dB relatif au seuil de parole : 0 dB = seuil)
+  const db=[]; for(let k=first;k<=last;k++) if(voiced[k]) db.push(20*Math.log10(frames[k].rms/seuil));
+  if(db.length>=10){
+    const t=Math.floor(db.length/3);
+    res.volume={moyDb:moyenne(db), ecartDb:ecartType(db), tendanceDb: moyenne(db.slice(-t))-moyenne(db.slice(0,t))};
+  }
+  return res;
+}
+
+const MOTS_REMPLISSAGE=['euh','heu','hum','hmm','bah','ben','genre','voila','du coup','en fait','alors','donc','quoi','enfin','bref'];
+function analyserTexte(texte, motImpose){
+  const norm=normaliserTexte(texte);
+  const mots = norm? norm.split(' ').filter(Boolean):[];
+  const freq={}; mots.forEach(m=>{freq[m]=(freq[m]||0)+1;});
+  const uniques=Object.keys(freq).length;
+  const repetes=Object.entries(freq).filter(([m,c])=>c>1 && m.length>=3).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  let remplissage=0; const detail={};
+  const padded=' '+norm+' ';
+  MOTS_REMPLISSAGE.forEach(w=>{ const re=new RegExp(' '+w+' ','g'); let c=0,m; while((m=re.exec(padded))){c++; re.lastIndex=m.index+w.length;} if(c){detail[w]=c; remplissage+=c;} });
+  const impose = motImpose ? norm.includes(normaliserTexte(motImpose)) : null;
+  return {nbMots:mots.length, uniques, repetes, remplissage, detailRemplissage:detail, motImposePresent:impose};
+}
+// ==== PURE END
+
+// ---------- Configuration du jour (POC : un seul jour) ----------
+const JOURS = { 1: { a:'lanterne', b:'horloge' } };
+const JOUR = 1;
+
+document.getElementById('wordA').textContent = JOURS[JOUR].a;
+document.getElementById('wordB').textContent = JOURS[JOUR].b;
+document.getElementById('jourN').textContent = JOUR;
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const compat = document.getElementById('compat');
+(function checkCompat(){
+  const msgs=[];
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) msgs.push("Ce navigateur ne permet pas d'accéder au micro (ou la page n'est pas en https).");
+  if(!SR) msgs.push("La transcription automatique n'est pas disponible dans ce navigateur : utilise Chrome. Tu pourras quand même t'enregistrer et saisir ton texte à la main ; les mesures de voix fonctionnent.");
+  if(msgs.length){ compat.textContent=msgs.join(' '); compat.classList.remove('hidden'); }
+})();
+
+const resultats = {}; // id -> résultat
+
+// ---------- Exercice ----------
+function creerExercice(cfg){
+  const root=document.getElementById(cfg.id);
+  root.innerHTML = `
+    <h2>${cfg.titre}</h2>
+    <p class="consigne">${cfg.consigne}</p>
+    <div class="row">
+      <button class="primary" data-act="start">▶ Démarrer</button>
+      <button data-act="stop" disabled>■ Arrêter</button>
+      <span class="timer" data-el="timer">${fmt(cfg.secondes)}</span>
+      <div class="meter" title="Niveau du micro"><i data-el="meter"></i></div>
+    </div>
+    <div class="bar"><i data-el="progress"></i></div>
+    <div class="status" data-el="status">Prêt.</div>
+    <div class="live hidden" data-el="live"></div>
+    <div class="hidden" data-el="result">
+      <div class="tiles" data-el="tiles"></div>
+      <canvas data-el="canvas"></canvas>
+      <div class="legend"><span><i style="background:var(--voice)"></i>voix</span><span><i style="background:var(--silence)"></i>silence</span><span><i style="background:var(--pause)"></i>pause ≥ 0,7 s</span></div>
+      <label class="small" for="${cfg.id}-txt">Transcription (corrige-la si la reconnaissance s'est trompée) :</label>
+      <textarea id="${cfg.id}-txt" rows="4" data-el="txt"></textarea>
+      <div class="row" style="margin-top:6px"><button data-act="recalc">Recalculer avec mon texte</button><button data-act="redo">↻ Recommencer</button></div>
+      <div data-el="replay"></div>
+      <details><summary>Détails techniques</summary><pre class="small" data-el="debug" style="white-space:pre-wrap"></pre></details>
+    </div>`;
+  const $=s=>root.querySelector(`[data-el="${s}"]`);
+  const btnStart=root.querySelector('[data-act="start"]'), btnStop=root.querySelector('[data-act="stop"]');
+  let session=null;
+
+  btnStart.addEventListener('click', demarrer);
+  btnStop.addEventListener('click', ()=>{ if(session) session.arreterTot=true; });
+  root.querySelector('[data-act="redo"]').addEventListener('click', ()=>{ delete resultats[cfg.id]; $('result').classList.add('hidden'); $('status').textContent='Prêt.'; $('timer').textContent=fmt(cfg.secondes); $('progress').style.width='0'; majBilanBtn(); });
+  root.querySelector('[data-act="recalc"]').addEventListener('click', ()=>{ const r=resultats[cfg.id]; if(!r) return; r.texte=$('txt').value.trim(); r.texteAnalyse=analyserTexte(r.texte, cfg.motImpose); afficher(r); majBilanBtn(); });
+
+  async function demarrer(){
+    btnStart.disabled=true; btnStop.disabled=true;
+    $('result').classList.add('hidden'); $('live').classList.remove('hidden'); $('live').innerHTML='';
+    let stream, ctx;
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:false, autoGainControl:false}});
+    }catch(e){
+      $('status').textContent="Micro inaccessible : autorise le micro dans le navigateur, puis recommence."; btnStart.disabled=false; return;
+    }
+    const AC=window.AudioContext||window.webkitAudioContext; ctx=new AC();
+    try{ await ctx.resume(); }catch(_){}
+    const src=ctx.createMediaStreamSource(stream);
+    const an=ctx.createAnalyser(); an.fftSize=2048; src.connect(an);
+    const buf=new Float32Array(an.fftSize);
+    const lire=()=>{ an.getFloatTimeDomainData(buf); let s=0; for(let i=0;i<buf.length;i++) s+=buf[i]*buf[i]; return Math.sqrt(s/buf.length); };
+
+    // 1) calibration du bruit de fond (3 s)
+    session={arreterTot:false};
+    const bruit=[];
+    for(let c=3;c>=1;c--){
+      $('status').textContent=`Reste silencieux… mesure du bruit de fond (${c})`;
+      const t0=performance.now();
+      while(performance.now()-t0<1000){ bruit.push(lire()); $('meter').style.width=Math.min(100, lire()*600)+'%'; await attendre(50); }
+    }
+    const tri=[...bruit].sort((a,b)=>a-b); const plancher=tri[Math.floor(tri.length*0.9)]||0.002;
+    const seuil=Math.max(plancher*3, 0.01);
+
+    // 2) enregistrement
+    const chunks=[]; let rec=null;
+    try{ rec=new MediaRecorder(stream); rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); }; rec.start(); }catch(_){ rec=null; }
+    let reco=null; const live=$('live');
+    if(SR){
+      reco=demarrerReco(({finalTxt, interim})=>{ live.innerHTML=''; live.append(document.createTextNode(finalTxt)); const sp=document.createElement('span'); sp.className='interim'; sp.textContent=interim; live.append(sp); });
+    } else { live.textContent="(transcription automatique indisponible — tu saisiras ton texte après l'exercice)"; }
+
+    const frames=[]; const t0=performance.now(); btnStop.disabled=false;
+    $('status').textContent='🎙 Parle !  (consigne : '+cfg.rappel+')';
+    let duree=0;
+    while(true){
+      const t=(performance.now()-t0)/1000;
+      if(t>=cfg.secondes || session.arreterTot){ duree=Math.min(t,cfg.secondes); break; }
+      const r=lire(); an.getFloatTimeDomainData(buf);
+      const parle=r>seuil; const f0 = parle ? detectPitch(buf, ctx.sampleRate) : null;
+      frames.push({t, rms:r, f0});
+      $('meter').style.width=Math.min(100, r*600)+'%';
+      $('timer').textContent=fmt(cfg.secondes-t); $('progress').style.width=(100*t/cfg.secondes)+'%';
+      await attendre(50);
+    }
+    btnStop.disabled=true; $('status').textContent='Analyse en cours…';
+    if(rec && rec.state!=='inactive') rec.stop();
+    let texte=''; if(reco) texte=await reco.arreter();
+    stream.getTracks().forEach(t=>t.stop()); try{ctx.close();}catch(_){}
+    $('meter').style.width='0'; $('progress').style.width='100%'; $('timer').textContent=fmt(0);
+    await attendre(250);
+
+    const audio = analyserAudio(frames, duree, seuil);
+    const res={cfg, duree, seuil, plancher, frames, audio, texte:texte.trim(), blobUrl: chunks.length? URL.createObjectURL(new Blob(chunks,{type:(rec&&rec.mimeType)||'audio/webm'})):null, reconnue: !!SR};
+    res.texteAnalyse=analyserTexte(res.texte, cfg.motImpose);
+    resultats[cfg.id]=res;
+    live.classList.add('hidden'); afficher(res); btnStart.disabled=false; majBilanBtn();
+    $('status').textContent = SR ? 'Terminé. Relis la transcription et corrige-la si besoin.' : "Terminé. Saisis ton texte dans la zone ci-dessous (la reconnaissance vocale n'est pas disponible ici), puis « Recalculer ».";
+  }
+
+  function afficher(r){
+    const a=r.audio, t=r.texteAnalyse, c=cfg;
+    $('result').classList.remove('hidden');
+    const txt=$('txt'); if(txt.value!==r.texte) txt.value=r.texte;
+    const tiles=$('tiles'); tiles.innerHTML='';
+    const T=(k,v,h,cls)=>{ const d=document.createElement('div'); d.className='tile'; d.innerHTML='<div class="k"></div><div class="v"></div><div class="h"></div>'; d.children[0].textContent=k; d.children[1].textContent=v; if(cls) d.children[1].classList.add(cls); d.children[2].textContent=h||''; tiles.append(d); };
+    if(!a.aParle){ T('Voix détectée','non','Aucune parole détectée : vérifie le micro et le volume.','tag-bad'); }
+    else{
+      const dureeMin=r.duree/60;
+      if(c.type==='association'){
+        const parMot = t.nbMots? r.duree/t.nbMots : 0;
+        T('Mots enchaînés', String(t.nbMots), t.nbMots? `1 mot toutes les ${parMot.toFixed(1).replace('.',',')} s`:'(texte vide)', t.nbMots? (parMot<=2?'tag-ok':'tag-warn'):'tag-bad');
+        T('Mots différents', t.uniques+' / '+t.nbMots, t.nbMots? (t.uniques===t.nbMots?'aucune répétition':'répétitions : '+(t.repetes.map(x=>x[0]+'×'+x[1]).join(', ')||'quelques mots courts')) : '');
+      } else {
+        const debit = t.nbMots/(a.tempsActif/60);
+        T('Mots prononcés', String(t.nbMots), `cible indicative : 250–300 sur 2 min`);
+        T('Débit (hors pauses)', Math.round(debit)+' mots/min', debit<90?'plutôt lent / hésitant':(debit>170?'très rapide':'rythme naturel'), debit<90?'tag-warn':(debit>170?'tag-warn':'tag-ok'));
+        T('Mot imposé « '+c.motImpose+' »', t.motImposePresent?'utilisé ✓':'absent ✗', 'dans la transcription', t.motImposePresent?'tag-ok':'tag-bad');
+      }
+      T('Délai avant de parler', a.delaiInitial.toFixed(1).replace('.',',')+' s', a.delaiInitial>3?'démarrage lent':'bon démarrage', a.delaiInitial>3?'tag-warn':'tag-ok');
+      T('Pauses ≥ 0,7 s', String(a.nbPauses), `dont ${a.nbBlancs} blanc(s) ≥ 2 s · plus longue ${a.plusLongue.toFixed(1).replace('.',',')} s`, a.nbBlancs>0?'tag-warn':'tag-ok');
+      T('Silence final', a.silenceFinal.toFixed(1).replace('.',',')+' s', a.silenceFinal>4?'tu as arrêté avant la fin':'tu as tenu jusqu\'au bout', a.silenceFinal>4?'tag-warn':'tag-ok');
+      if(a.hauteur.n){
+        const e=a.hauteur.ecartSt; const lab=e<1.5?'voix plutôt monotone':(e>4?'voix très expressive':'voix vivante');
+        T('Variation de la hauteur', e.toFixed(1).replace('.',',')+' demi-tons', lab+' · médiane '+Math.round(a.hauteur.mediane)+' Hz (indicatif)', e<1.5?'tag-warn':'tag-ok');
+      } else T('Variation de la hauteur','n/d','pas assez de voix analysable');
+      if(a.volume.moyDb||a.volume.ecartDb){
+        const tr=a.volume.tendanceDb; T('Volume : début → fin', (tr>=0?'+':'')+tr.toFixed(1).replace('.',',')+' dB', tr<-3?'la voix s\'éteint vers la fin':'volume stable', tr<-3?'tag-warn':'tag-ok');
+      }
+      T('Mots de remplissage', String(t.remplissage), Object.entries(t.detailRemplissage).map(([k,v])=>k+'×'+v).join(', ')||'(la reconnaissance supprime souvent les « euh »)');
+    }
+    dessiner($('canvas'), r);
+    const rep=$('replay'); rep.innerHTML='';
+    if(r.blobUrl){ const l=document.createElement('div'); l.className='small'; l.textContent="Réécoute-toi :"; const au=document.createElement('audio'); au.controls=true; au.src=r.blobUrl; rep.append(l,au); }
+    $('debug').textContent=`durée=${r.duree.toFixed(1)}s · trames=${r.frames.length} · bruit de fond (p90)=${r.plancher.toFixed(4)} · seuil parole=${r.seuil.toFixed(4)} · reconnaissance=${r.reconnue?'oui':'non'}`;
+  }
+}
+
+function demarrerReco(onChange){
+  const r=new SR(); r.lang='fr-FR'; r.continuous=true; r.interimResults=true; r.maxAlternatives=1;
+  let finalTxt='', interim='', actif=true, fini;
+  const promesse=new Promise(res=>{fini=res;});
+  r.onresult=e=>{ interim=''; for(let i=e.resultIndex;i<e.results.length;i++){ const x=e.results[i]; if(x.isFinal) finalTxt+=x[0].transcript.trim()+' '; else interim+=x[0].transcript; } onChange({finalTxt, interim}); };
+  r.onerror=e=>{ if(e.error==='not-allowed'||e.error==='service-not-allowed'){ actif=false; } };
+  r.onend=()=>{ if(actif){ try{ r.start(); }catch(_){} } else { fini(); } };
+  try{ r.start(); }catch(_){}
+  return { arreter(){ actif=false; try{ r.stop(); }catch(_){} const t=setTimeout(()=>fini(),1500); return promesse.then(()=>{clearTimeout(t); return (finalTxt+' '+interim).trim();}); } };
+}
+
+function dessiner(canvas, r){
+  const dpr=window.devicePixelRatio||1, w=canvas.clientWidth||600, h=canvas.clientHeight||64;
+  canvas.width=w*dpr; canvas.height=h*dpr; const g=canvas.getContext('2d'); g.scale(dpr,dpr);
+  const css=getComputedStyle(document.documentElement);
+  const cV=css.getPropertyValue('--voice').trim(), cS=css.getPropertyValue('--silence').trim(), cP=css.getPropertyValue('--pause').trim();
+  g.clearRect(0,0,w,h);
+  const D=r.cfg.secondes, x=t=>t/D*w;
+  r.audio.pauses.forEach(p=>{ g.globalAlpha=.35; g.fillStyle=cP; g.fillRect(x(p.debut),0,Math.max(2,x(p.duree)),h); g.globalAlpha=1; });
+  r.frames.forEach((f,i)=>{
+    const v=r.audio.voiced[i]; const db=Math.max(0, Math.min(1, (20*Math.log10((f.rms+1e-6)/r.seuil)+6)/36));
+    const bh = v ? Math.max(3, db*h*0.9) : 2; g.fillStyle = v?cV:cS; g.fillRect(x(f.t), h-bh, Math.max(1,w*0.05/D), bh);
+  });
+}
+
+function fmt(s){ s=Math.max(0,Math.ceil(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+function attendre(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+creerExercice({ id:'ex1', type:'association', secondes:60, titre:"Exercice 1 — Association de mots (60 s)",
+  consigne:`Pars du mot <strong>« ${JOURS[JOUR].a} »</strong> et associe-lui immédiatement un autre mot logique, puis enchaîne sans t'arrêter (exemple : bouteille → bouchon → drapeau → bonnet → tissu…). Dis simplement les mots, un après l'autre.`,
+  rappel:'un mot, puis le suivant, sans t\'arrêter', motImpose:null });
+creerExercice({ id:'ex2', type:'histoire', secondes:120, titre:"Exercice 2 — Discours improvisé (2 min)",
+  consigne:`Raconte une histoire (ou parle) sur le sujet <strong>« ${JOURS[JOUR].b} »</strong>, à voix haute, pendant 2 minutes <strong>sans t'arrêter</strong>. Si tu bloques, répète ta dernière idée ou change d'angle, mais continue de parler.`,
+  rappel:'continue de parler, même si tu hésites', motImpose:JOURS[JOUR].b });
+
+// ---------- Bilan ----------
+const btnBilan=document.getElementById('btnBilan'), btnCopy=document.getElementById('btnCopy'), bilanTxt=document.getElementById('bilanTxt');
+function majBilanBtn(){ btnBilan.disabled = !Object.keys(resultats).length; }
+const f1=x=>x.toFixed(1).replace('.',',');
+function bloc(r){
+  const a=r.audio,t=r.texteAnalyse,c=r.cfg; const L=[];
+  L.push(`${c.titre} — ${Math.round(r.duree)} s réalisées sur ${c.secondes}`);
+  L.push(`Transcription : ${r.texte||'(vide)'}`);
+  if(!a.aParle){ L.push('Mesures : aucune voix détectée.'); return L.join('\n'); }
+  const m=[];
+  m.push(`mots: ${t.nbMots} (différents: ${t.uniques})`);
+  if(c.type==='histoire') m.push(`débit hors pauses: ${Math.round(t.nbMots/(a.tempsActif/60))} mots/min`, `mot imposé « ${c.motImpose} » : ${t.motImposePresent?'utilisé':'absent'}`);
+  else m.push(`rythme: 1 mot toutes les ${f1(r.duree/Math.max(1,t.nbMots))} s`);
+  m.push(`délai avant de parler: ${f1(a.delaiInitial)} s`, `pauses ≥0,7 s: ${a.nbPauses} (blancs ≥2 s: ${a.nbBlancs}, plus longue: ${f1(a.plusLongue)} s, total: ${f1(a.totalPauses)} s)`, `silence final: ${f1(a.silenceFinal)} s`);
+  if(a.hauteur.n) m.push(`variation de hauteur: ${f1(a.hauteur.ecartSt)} demi-tons (étendue 10–90 %: ${f1(a.hauteur.etendueSt)}), médiane ${Math.round(a.hauteur.mediane)} Hz`);
+  m.push(`volume début→fin: ${a.volume.tendanceDb>=0?'+':''}${f1(a.volume.tendanceDb)} dB`);
+  m.push(`mots de remplissage: ${t.remplissage}${Object.keys(t.detailRemplissage).length? ' ('+Object.entries(t.detailRemplissage).map(([k,v])=>k+'×'+v).join(', ')+')':''}`);
+  if(t.repetes.length) m.push(`mots répétés: ${t.repetes.map(x=>x[0]+'×'+x[1]).join(', ')}`);
+  if(a.pauses.length) m.push(`pauses (début s / durée s): ${a.pauses.slice(0,12).map(p=>f1(p.debut)+'/'+f1(p.duree)).join(' · ')}`);
+  L.push('Mesures : '+m.join(' ; '));
+  L.push(`(Seuil de parole ${r.seuil.toFixed(3)}, bruit de fond ${r.plancher.toFixed(3)}. Transcription automatique : ${r.reconnue?'oui':'non, saisie à la main'}.)`);
+  return L.join('\n');
+}
+btnBilan.addEventListener('click', ()=>{
+  const d=new Date().toLocaleDateString('fr-FR');
+  const parts=[`BILAN JOUR ${JOUR}/100 — ${d}`,`Mots du jour : « ${JOURS[JOUR].a} » (association) · « ${JOURS[JOUR].b} » (histoire)`,''];
+  ['ex1','ex2'].forEach(id=>{ if(resultats[id]){ parts.push(bloc(resultats[id]),''); } else parts.push(`(${id==='ex1'?'Exercice 1':'Exercice 2'} non réalisé)`,''); });
+  parts.push("Merci de me faire le retour du jour : points forts, un point à améliorer, et une consigne pour demain.");
+  bilanTxt.value=parts.join('\n'); btnCopy.disabled=false;
+  try{ localStorage.setItem('parole-jour'+JOUR, bilanTxt.value); }catch(_){}
+});
+btnCopy.addEventListener('click', async ()=>{
+  const msg=document.getElementById('copyMsg');
+  try{ await navigator.clipboard.writeText(bilanTxt.value); msg.textContent='Copié ✓'; }
+  catch(_){ bilanTxt.removeAttribute('readonly'); bilanTxt.select(); try{ document.execCommand('copy'); msg.textContent='Copié ✓'; }catch(e){ msg.textContent='Sélectionne le texte et copie-le à la main.'; } bilanTxt.setAttribute('readonly',''); }
+});
+
+// ---------- Lecture vocale du retour ----------
+document.getElementById('btnLire').addEventListener('click', ()=>{
+  const msg=document.getElementById('ttsMsg');
+  if(!('speechSynthesis' in window)){ msg.textContent="Lecture vocale indisponible dans ce navigateur."; return; }
+  const texte=document.getElementById('retourTxt').value.replace(/[*#_`>]/g,'').trim();
+  if(!texte){ msg.textContent='Colle d\'abord le retour.'; return; }
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(texte); u.lang='fr-FR';
+  const v=speechSynthesis.getVoices().find(x=>x.lang&&x.lang.toLowerCase().startsWith('fr')); if(v) u.voice=v;
+  u.onend=()=>{msg.textContent='';}; msg.textContent='Lecture…'; speechSynthesis.speak(u);
+});
+document.getElementById('btnStopLire').addEventListener('click', ()=>{ try{ speechSynthesis.cancel(); }catch(_){} document.getElementById('ttsMsg').textContent=''; });
+
+// ---------- Accès : même code élève que le reste du site ----------
+sessionValide().then(s => {
+  if (!s) { location.replace("index.html"); return; }
+  document.getElementById("contenu").hidden = false;
+});
+</script>
+</body>
+</html>

@@ -94,6 +94,21 @@ function routineHtml(r, session) {
   </article>`;
 }
 
+function paroleHtml() {
+  return `<article class="routine">
+    <h3>Fluidité verbale en 100 jours <small style="color:var(--rouge);font-size:14px;font-weight:600">· POC</small></h3>
+    <p>Parler sans s'arrêter : chaque jour, une association de mots (60 s) et un discours improvisé (2 min), mesurés dans le navigateur (pauses, débit, voix). Test du jour 1 uniquement.</p>
+    <div class="stats">
+      <div class="stat"><b>1/100</b><span>jour disponible</span></div>
+      <div class="stat"><b>2</b><span>exercices oraux</span></div>
+      <div class="stat"><b>Chrome</b><span>micro requis</span></div>
+    </div>
+    <div class="actions">
+      <a class="btn" href="parole.html">Faire le jour 1</a>
+    </div>
+  </article>`;
+}
+
 async function afficher() {
   const c = document.getElementById("contenu");
   const quitter = document.getElementById("nav-quitter");
@@ -111,7 +126,7 @@ async function afficher() {
             <button type="button" class="lien" onclick="sortir()">Changer de code</button>
           </div>
           <p class="niveau">Deux parcours de 100 séances, 50 heures chacun.</p>
-          <div class="routines">${ROUTINES.map(r => routineHtml(r, s)).join("")}</div>
+          <div class="routines">${ROUTINES.map(r => routineHtml(r, s)).join("")}${paroleHtml()}</div>
         </section>
       </div>`;
   } else {
