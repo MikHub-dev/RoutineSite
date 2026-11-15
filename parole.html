@@ -93,7 +93,7 @@
 
   <section class="card" id="bilan">
     <h2>Bilan du jour</h2>
-    <p class="consigne">Termine au moins un exercice, puis copie le bilan et colle-le à Claude dans la conversation du projet.</p>
+    <p class="consigne">Termine au moins un exercice. Avant de générer le bilan, corrige la transcription si la reconnaissance s'est trompée. Puis copie le bilan et colle-le à Claude dans la conversation du projet « 30 minutes par jour ».</p>
     <div class="row"><button id="btnBilan" class="primary" disabled>Générer le bilan</button><button id="btnCopy" disabled>Copier</button><span id="copyMsg" class="small"></span></div>
     <textarea id="bilanTxt" rows="12" placeholder="Le bilan apparaîtra ici." readonly></textarea>
   </section>
@@ -337,7 +337,8 @@ function creerExercice(cfg){
         T('Mot imposé « '+c.motImpose+' »', t.motImposePresent?'utilisé ✓':'absent ✗', 'dans la transcription', t.motImposePresent?'tag-ok':'tag-bad');
       }
       T('Délai avant de parler', a.delaiInitial.toFixed(1).replace('.',',')+' s', a.delaiInitial>3?'démarrage lent':'bon démarrage', a.delaiInitial>3?'tag-warn':'tag-ok');
-      T('Pauses ≥ 0,7 s', String(a.nbPauses), `dont ${a.nbBlancs} blanc(s) ≥ 2 s · plus longue ${a.plusLongue.toFixed(1).replace('.',',')} s`, a.nbBlancs>0?'tag-warn':'tag-ok');
+      if(c.type==='association') T('Blancs ≥ 2 s', String(a.nbBlancs), `plus longue pause ${a.plusLongue.toFixed(1).replace('.',',')} s · les petites pauses entre deux mots sont normales`, a.nbBlancs>3?'tag-warn':'tag-ok');
+      else T('Pauses ≥ 0,7 s', String(a.nbPauses), `dont ${a.nbBlancs} blanc(s) ≥ 2 s · plus longue ${a.plusLongue.toFixed(1).replace('.',',')} s`, a.nbBlancs>0?'tag-warn':'tag-ok');
       T('Silence final', a.silenceFinal.toFixed(1).replace('.',',')+' s', a.silenceFinal>4?'tu as arrêté avant la fin':'tu as tenu jusqu\'au bout', a.silenceFinal>4?'tag-warn':'tag-ok');
       if(a.hauteur.n){
         const e=a.hauteur.ecartSt; const lab=e<1.5?'voix plutôt monotone':(e>4?'voix très expressive':'voix vivante');
@@ -403,12 +404,17 @@ function bloc(r){
   m.push(`mots: ${t.nbMots} (différents: ${t.uniques})`);
   if(c.type==='histoire') m.push(`débit hors pauses: ${Math.round(t.nbMots/(a.tempsActif/60))} mots/min`, `mot imposé « ${c.motImpose} » : ${t.motImposePresent?'utilisé':'absent'}`);
   else m.push(`rythme: 1 mot toutes les ${f1(r.duree/Math.max(1,t.nbMots))} s`);
-  m.push(`délai avant de parler: ${f1(a.delaiInitial)} s`, `pauses ≥0,7 s: ${a.nbPauses} (blancs ≥2 s: ${a.nbBlancs}, plus longue: ${f1(a.plusLongue)} s, total: ${f1(a.totalPauses)} s)`, `silence final: ${f1(a.silenceFinal)} s`);
+  const blancs=a.pauses.filter(p=>p.duree>=2);
+  m.push(`délai avant de parler: ${f1(a.delaiInitial)} s`);
+  if(c.type==='association') m.push(`blancs ≥2 s: ${a.nbBlancs} (plus longue pause: ${f1(a.plusLongue)} s, total des blancs: ${f1(blancs.reduce((s,p)=>s+p.duree,0))} s)`);
+  else m.push(`pauses ≥0,7 s: ${a.nbPauses} (blancs ≥2 s: ${a.nbBlancs}, plus longue: ${f1(a.plusLongue)} s, total: ${f1(a.totalPauses)} s)`);
+  m.push(`silence final: ${f1(a.silenceFinal)} s`);
   if(a.hauteur.n) m.push(`variation de hauteur: ${f1(a.hauteur.ecartSt)} demi-tons (étendue 10–90 %: ${f1(a.hauteur.etendueSt)}), médiane ${Math.round(a.hauteur.mediane)} Hz`);
   m.push(`volume début→fin: ${a.volume.tendanceDb>=0?'+':''}${f1(a.volume.tendanceDb)} dB`);
   m.push(`mots de remplissage: ${t.remplissage}${Object.keys(t.detailRemplissage).length? ' ('+Object.entries(t.detailRemplissage).map(([k,v])=>k+'×'+v).join(', ')+')':''}`);
   if(t.repetes.length) m.push(`mots répétés: ${t.repetes.map(x=>x[0]+'×'+x[1]).join(', ')}`);
-  if(a.pauses.length) m.push(`pauses (début s / durée s): ${a.pauses.slice(0,12).map(p=>f1(p.debut)+'/'+f1(p.duree)).join(' · ')}`);
+  const listeP = c.type==='association' ? blancs : a.pauses;
+  if(listeP.length) m.push(`${c.type==='association'?'blancs':'pauses'} (début s / durée s): ${listeP.slice(0,12).map(p=>f1(p.debut)+'/'+f1(p.duree)).join(' · ')}`);
   L.push('Mesures : '+m.join(' ; '));
   L.push(`(Seuil de parole ${r.seuil.toFixed(3)}, bruit de fond ${r.plancher.toFixed(3)}. Transcription automatique : ${r.reconnue?'oui':'non, saisie à la main'}.)`);
   return L.join('\n');
@@ -417,7 +423,7 @@ btnBilan.addEventListener('click', ()=>{
   const d=new Date().toLocaleDateString('fr-FR');
   const parts=[`BILAN JOUR ${JOUR}/100 — ${d}`,`Mots du jour : « ${JOURS[JOUR].a} » (association) · « ${JOURS[JOUR].b} » (histoire)`,''];
   ['ex1','ex2'].forEach(id=>{ if(resultats[id]){ parts.push(bloc(resultats[id]),''); } else parts.push(`(${id==='ex1'?'Exercice 1':'Exercice 2'} non réalisé)`,''); });
-  parts.push("Merci de me faire le retour du jour : points forts, un point à améliorer, et une consigne pour demain.");
+  parts.push("Merci de me faire le retour du jour : une analyse, 3 axes d'amélioration au maximum, ma note selon la grille du projet (sur 50 par exercice, sur 100 au total), la comparaison avec les jours précédents et une consigne pour demain. Ajoute aussi ma ligne au journal de suivi.");
   bilanTxt.value=parts.join('\n'); btnCopy.disabled=false;
   try{ localStorage.setItem('parole-jour'+JOUR, bilanTxt.value); }catch(_){}
 });
