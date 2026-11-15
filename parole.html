@@ -15,6 +15,17 @@
   .parole{max-width:860px;margin:0 auto}
   .parole[hidden]{display:none}
   .parole h1{font-size:1.6rem}
+  .notes-tab{border-collapse:collapse;margin:8px 0;font-size:.95rem}
+  .notes-tab td,.notes-tab th{padding:4px 12px 4px 0;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+  .notes-tab th{color:var(--muted);font-weight:600;font-size:.85rem}
+  .grille-details{margin:10px 0}
+  .grille-details h4{margin:14px 0 4px}
+  .suivi-tab{width:100%;border-collapse:collapse;font-size:.92rem;margin:10px 0}
+  .suivi-tab th,.suivi-tab td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  .suivi-tab th{color:var(--muted);font-weight:600;font-size:.82rem}
+  .save{min-height:1.4em;font-size:.9rem;margin:8px 0 0}
+  .save.ok{color:var(--ok)} .save.ko{color:var(--warn)}
+  pre.ancien{white-space:pre-wrap;font:inherit;font-size:.9rem;color:var(--muted);margin:8px 0 0}
 
     *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -96,6 +107,15 @@
     <p class="consigne">Termine au moins un exercice. Avant de générer le bilan, corrige la transcription si la reconnaissance s'est trompée. Puis copie le bilan et colle-le à Claude dans la conversation du projet « 30 minutes par jour ».</p>
     <div class="row"><button id="btnBilan" class="primary" disabled>Générer le bilan</button><button id="btnCopy" disabled>Copier</button><span id="copyMsg" class="small"></span></div>
     <textarea id="bilanTxt" rows="12" placeholder="Le bilan apparaîtra ici." readonly></textarea>
+    <p class="save" id="sauvegarde" role="status"></p>
+  </section>
+
+  <section class="card" id="suivi">
+    <h2>Mon suivi</h2>
+    <p class="consigne">Chaque séance est enregistrée automatiquement à la fin de chaque exercice. Les notes finales (avec les critères jugés) s'ajoutent après le retour de Claude.</p>
+    <div id="suiviContenu"><p class="small">Chargement…</p></div>
+    <div id="grilleZone"></div>
+    <div id="ancienZone"></div>
   </section>
 
   <section class="card" id="retour">
@@ -107,6 +127,7 @@
 </main>
 
 <script src="commun.js"></script>
+<script src="parole-grille.js"></script>
 <script>
 
 // ==== PURE START (fonctions testées hors navigateur)
@@ -237,6 +258,7 @@ function creerExercice(cfg){
     <div class="live hidden" data-el="live"></div>
     <div class="hidden" data-el="result">
       <div class="tiles" data-el="tiles"></div>
+      <div data-el="notes"></div>
       <canvas data-el="canvas"></canvas>
       <div class="legend"><span><i style="background:var(--voice)"></i>voix</span><span><i style="background:var(--silence)"></i>silence</span><span><i style="background:var(--pause)"></i>pause ≥ 0,7 s</span></div>
       <label class="small" for="${cfg.id}-txt">Transcription (corrige-la si la reconnaissance s'est trompée) :</label>
@@ -252,7 +274,7 @@ function creerExercice(cfg){
   btnStart.addEventListener('click', demarrer);
   btnStop.addEventListener('click', ()=>{ if(session) session.arreterTot=true; });
   root.querySelector('[data-act="redo"]').addEventListener('click', ()=>{ delete resultats[cfg.id]; $('result').classList.add('hidden'); $('status').textContent='Prêt.'; $('timer').textContent=fmt(cfg.secondes); $('progress').style.width='0'; majBilanBtn(); });
-  root.querySelector('[data-act="recalc"]').addEventListener('click', ()=>{ const r=resultats[cfg.id]; if(!r) return; r.texte=$('txt').value.trim(); r.texteAnalyse=analyserTexte(r.texte, cfg.motImpose); afficher(r); majBilanBtn(); });
+  root.querySelector('[data-act="recalc"]').addEventListener('click', ()=>{ const r=resultats[cfg.id]; if(!r) return; r.texte=$('txt').value.trim(); r.texteAnalyse=analyserTexte(r.texte, cfg.motImpose); afficher(r); majBilanBtn(); sauver(); });
 
   async function demarrer(){
     btnStart.disabled=true; btnStop.disabled=true;
@@ -313,7 +335,7 @@ function creerExercice(cfg){
     const res={cfg, duree, seuil, plancher, frames, audio, texte:texte.trim(), blobUrl: chunks.length? URL.createObjectURL(new Blob(chunks,{type:(rec&&rec.mimeType)||'audio/webm'})):null, reconnue: !!SR};
     res.texteAnalyse=analyserTexte(res.texte, cfg.motImpose);
     resultats[cfg.id]=res;
-    live.classList.add('hidden'); afficher(res); btnStart.disabled=false; majBilanBtn();
+    live.classList.add('hidden'); afficher(res); btnStart.disabled=false; majBilanBtn(); sauver();
     $('status').textContent = SR ? 'Terminé. Relis la transcription et corrige-la si besoin.' : "Terminé. Saisis ton texte dans la zone ci-dessous (la reconnaissance vocale n'est pas disponible ici), puis « Recalculer ».";
   }
 
@@ -349,6 +371,7 @@ function creerExercice(cfg){
       }
       T('Mots de remplissage', String(t.remplissage), Object.entries(t.detailRemplissage).map(([k,v])=>k+'×'+v).join(', ')||'(la reconnaissance supprime souvent les « euh »)');
     }
+    $('notes').innerHTML='<h3 style="font-size:1rem;margin:10px 0 0">Points de la grille (mesurés par la page)</h3>'+tableauNotesHtml(c.id, metriques(r).auto, null)+'<p class="small">Les critères jugés sont notés avec le retour de Claude ; la note finale apparaît ensuite dans « Mon suivi ».</p>';
     dessiner($('canvas'), r);
     const rep=$('replay'); rep.innerHTML='';
     if(r.blobUrl){ const l=document.createElement('div'); l.className='small'; l.textContent="Réécoute-toi :"; const au=document.createElement('audio'); au.controls=true; au.src=r.blobUrl; rep.append(l,au); }
@@ -391,6 +414,104 @@ creerExercice({ id:'ex2', type:'histoire', secondes:120, titre:"Exercice 2 — D
   consigne:`Raconte une histoire (ou parle) sur le sujet <strong>« ${JOURS[JOUR].b} »</strong>, à voix haute, pendant 2 minutes <strong>sans t'arrêter</strong>. Si tu bloques, répète ta dernière idée ou change d'angle, mais continue de parler.`,
   rappel:'continue de parler, même si tu hésites', motImpose:JOURS[JOUR].b });
 
+// ---------- Métriques stockées, sauvegarde et suivi ----------
+let SESSION = null;
+const SEANCE = String(Date.now());          // une séance = une ouverture de la page
+const cleHist = () => 'routinesite:parole:hist:' + SESSION.code;
+const lire = cle => { try{ return JSON.parse(localStorage.getItem(cle)) || null; }catch(_){ return null; } };
+const ecrire = (cle, v) => { try{ localStorage.setItem(cle, JSON.stringify(v)); }catch(_){} };
+
+function metriques(r){
+  if(!r) return null;
+  const a=r.audio, t=r.texteAnalyse, c=r.cfg;
+  const m={ texte:r.texte, aParle:a.aParle, reconnue:!!r.reconnue, duree:Math.round(r.duree*10)/10, mots:t.nbMots, differents:t.uniques,
+    delai:a.delaiInitial, silenceFinal:a.silenceFinal, pauses:a.nbPauses, blancs:a.nbBlancs, plusLongue:a.plusLongue, totalPauses:a.totalPauses,
+    remplissage:t.remplissage, hauteurSt:a.hauteur.n?a.hauteur.ecartSt:null, tendanceDb:(a.volume.moyDb||a.volume.ecartDb)?a.volume.tendanceDb:null,
+    debit:(a.aParle && a.tempsActif>0)? t.nbMots/(a.tempsActif/60):null, motImpose:c.motImpose? t.motImposePresent:null };
+  m.auto=noterAuto(c.id, m);
+  return m;
+}
+function instantane(){ return { jour:JOUR, seance:SEANCE, bilan:document.getElementById('bilanTxt').value||'', ex1:metriques(resultats.ex1), ex2:metriques(resultats.ex2) }; }
+
+function afficherSauvegarde(ok, msg){ const z=document.getElementById('sauvegarde'); z.textContent=msg; z.className='save '+(ok?'ok':'ko'); }
+
+async function envoyer(entree){
+  await appelerSuivi('/parole/enregistrer', { classe:SESSION.classe, code:SESSION.code, jour:entree.jour, seance:entree.seance, bilan:entree.bilan, ex1:entree.ex1, ex2:entree.ex2 });
+}
+// Enregistre la séance en cours : copie sur l'appareil (secours) puis envoi au site.
+async function sauver(){
+  if(!SESSION) return;
+  const p=instantane();
+  const hist=lire(cleHist())||{};
+  hist[SEANCE]={...p, date:(hist[SEANCE]&&hist[SEANCE].date)||new Date().toISOString(), envoye:false};
+  const ids=Object.keys(hist).sort(); while(ids.length>40) delete hist[ids.shift()];
+  ecrire(cleHist(), hist);
+  try{
+    await envoyer(p);
+    hist[SEANCE].envoye=true; ecrire(cleHist(), hist);
+    afficherSauvegarde(true, '✓ Séance enregistrée sur le site à '+new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})+'.');
+    if(resultats.ex1 && resultats.ex2) await enregistrerJour(SESSION,'parole',JOUR);
+  }catch(e){
+    if(e.statut===400||e.statut===403) hist[SEANCE].envoye='refuse';
+    ecrire(cleHist(), hist);
+    afficherSauvegarde(false, '⚠ Séance gardée sur cet appareil mais pas encore envoyée au site ('+e.message+'). Elle sera renvoyée à la prochaine ouverture de cette page.');
+  }
+  rafraichirSuivi();
+}
+// Renvoie les séances restées sur l'appareil (serveur injoignable ou pas encore mis à jour).
+async function renvoyerEnAttente(){
+  const hist=lire(cleHist()); if(!hist) return;
+  let change=false;
+  for(const id of Object.keys(hist).sort()){
+    const e=hist[id]; if(e.envoye===true||e.envoye==='refuse'||id===SEANCE) continue;
+    try{ await envoyer(e); e.envoye=true; change=true; }catch(err){ if(err.statut===400||err.statut===403){ e.envoye='refuse'; change=true; } else break; }
+  }
+  if(change) ecrire(cleHist(), hist);
+}
+
+async function chargerSeances(){
+  let serveur=null;
+  try{ serveur=(await appelerSuivi('/parole/etat',{classe:SESSION.classe,code:SESSION.code})).seances; }catch(_){}
+  const carte=new Map();
+  Object.values(lire(cleHist())||{}).forEach(s=>carte.set(String(s.seance),{...s}));
+  (serveur||[]).forEach(s=>carte.set(String(s.seance),{...(carte.get(String(s.seance))||{}),...s,envoye:true}));
+  const liste=[...carte.values()].filter(s=>s.ex1||s.ex2).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  return { liste, serveurOk: serveur!==null };
+}
+const dateCourte = iso => new Date(iso).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});
+const dateLongue = iso => new Date(iso).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'});
+
+function celluleExercice(ex, s){
+  const m=s[ex]; if(!m) return '<span class="small">non fait</span>';
+  const t=totalExercice(ex, s.notes&&s.notes[ex]);
+  if(t!=null) return `<b>${nf(t)}</b>/50`;
+  const pm=pointsMesures(ex, m.auto||{});
+  return `<span class="small">${nf(pm.pts)}/${pm.sur} mesurés, en attente de note</span>`;
+}
+async function rafraichirSuivi(){
+  if(!SESSION) return;
+  const zone=document.getElementById('suiviContenu');
+  const {liste, serveurOk}=await chargerSeances();
+  let html='';
+  if(!liste.length) html='<p class="small">Aucune séance pour l\'instant : fais un exercice pour commencer.</p>';
+  else{
+    const courbe=[]; 
+    liste.forEach(s=>{ const n=noteSur100(s); if(n) courbe.push({pct:n.pct, etiquette:dateLongue(s.date)+(n.complet?'':' (un seul exercice noté, ramené sur 100)'), court:dateCourte(s.date)}); });
+    html+=courbeSvg(courbe);
+    html+=`<table class="suivi-tab"><thead><tr><th>Date</th><th>Jour</th><th>Exercice 1</th><th>Exercice 2</th><th>Note /100</th><th>Envoi</th></tr></thead><tbody>${
+      liste.slice().reverse().map(s=>{ const n=noteSur100(s);
+        const note=n? (n.complet? `<b>${nf(n.somme,0)}</b> · ${esc(niveauNote(n.somme))}` : `<span class="small">${nf(n.somme,0)}/${n.max} (un exercice noté)</span>`) : '<span class="small">en attente</span>';
+        return `<tr><td>${esc(dateLongue(s.date))}</td><td>${esc(s.jour)}</td><td>${celluleExercice('ex1',s)}</td><td>${celluleExercice('ex2',s)}</td><td>${note}</td><td class="small">${s.envoye===true?'✓ site':(s.envoye==='refuse'?'refusé':'sur l\'appareil')}</td></tr>`; }).join('')
+    }</tbody></table>`;
+    if(!serveurOk) html+='<p class="small">Le serveur de suivi n\'a pas répondu : seules les séances de cet appareil sont affichées.</p>';
+  }
+  zone.innerHTML=html;
+  document.getElementById('grilleZone').innerHTML=grilleHtml();
+  const ancien=(()=>{ try{ return localStorage.getItem('parole-jour1'); }catch(_){ return null; } })();
+  const az=document.getElementById('ancienZone');
+  if(ancien && !az.dataset.fait){ az.dataset.fait='1'; az.innerHTML='<details><summary>Bilan du test précédent (conservé sur cet appareil)</summary><pre class="ancien"></pre></details>'; az.querySelector('pre').textContent=ancien; }
+}
+
 // ---------- Bilan ----------
 const btnBilan=document.getElementById('btnBilan'), btnCopy=document.getElementById('btnCopy'), bilanTxt=document.getElementById('bilanTxt');
 function majBilanBtn(){ btnBilan.disabled = !Object.keys(resultats).length; }
@@ -416,6 +537,8 @@ function bloc(r){
   const listeP = c.type==='association' ? blancs : a.pauses;
   if(listeP.length) m.push(`${c.type==='association'?'blancs':'pauses'} (début s / durée s): ${listeP.slice(0,12).map(p=>f1(p.debut)+'/'+f1(p.duree)).join(' · ')}`);
   L.push('Mesures : '+m.join(' ; '));
+  const pm=pointsMesures(c.id, r.metriques ? r.metriques.auto : metriques(r).auto);
+  L.push(`Points mesurés (grille v${GRILLE_VERSION}) : ${GRILLE[c.id].criteres.filter(k=>k.type==='mesuré').map(k=>k.nom.toLowerCase()+' '+nf(metriques(r).auto[k.id])+'/'+k.max).join(' · ')} — critères jugés à noter : ${GRILLE[c.id].criteres.filter(k=>k.type==='jugé').map(k=>k.nom.toLowerCase()+' /'+k.max).join(', ')}.`);
   L.push(`(Seuil de parole ${r.seuil.toFixed(3)}, bruit de fond ${r.plancher.toFixed(3)}. Transcription automatique : ${r.reconnue?'oui':'non, saisie à la main'}.)`);
   return L.join('\n');
 }
@@ -423,9 +546,10 @@ btnBilan.addEventListener('click', ()=>{
   const d=new Date().toLocaleDateString('fr-FR');
   const parts=[`BILAN JOUR ${JOUR}/100 — ${d}`,`Mots du jour : « ${JOURS[JOUR].a} » (association) · « ${JOURS[JOUR].b} » (histoire)`,''];
   ['ex1','ex2'].forEach(id=>{ if(resultats[id]){ parts.push(bloc(resultats[id]),''); } else parts.push(`(${id==='ex1'?'Exercice 1':'Exercice 2'} non réalisé)`,''); });
-  parts.push("Merci de me faire le retour du jour : une analyse, 3 axes d'amélioration au maximum, ma note selon la grille du projet (sur 50 par exercice, sur 100 au total), la comparaison avec les jours précédents et une consigne pour demain. Ajoute aussi ma ligne au journal de suivi.");
+  parts.push("Merci de me faire le retour du jour : une analyse, 3 axes d'amélioration au maximum, ma note selon la grille du projet (sur 50 par exercice, sur 100 au total), la comparaison avec les jours précédents et une consigne pour demain. Ajoute aussi ma ligne au journal de suivi, et termine par la ligne [NOTES] (points de chaque critère) que l'enseignant recopiera dans RoutineSite.");
   bilanTxt.value=parts.join('\n'); btnCopy.disabled=false;
   try{ localStorage.setItem('parole-jour'+JOUR, bilanTxt.value); }catch(_){}
+  sauver();
 });
 btnCopy.addEventListener('click', async ()=>{
   const msg=document.getElementById('copyMsg');
@@ -449,7 +573,9 @@ document.getElementById('btnStopLire').addEventListener('click', ()=>{ try{ spee
 // ---------- Accès : même code élève que le reste du site ----------
 sessionValide().then(s => {
   if (!s) { location.replace("index.html"); return; }
+  SESSION = s;
   document.getElementById("contenu").hidden = false;
+  renvoyerEnAttente().finally(rafraichirSuivi);
 });
 </script>
 </body>

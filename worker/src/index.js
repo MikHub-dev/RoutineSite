@@ -1,4 +1,4 @@
-// Version : 1.0
+// Version : 1.1 (séances de « Fluidité verbale »)
 // Worker « routinesite-suivi » : suivi des jours faits par élève pour RoutineSite.
 //
 // Routes (toutes en POST, JSON) :
@@ -7,10 +7,18 @@
 //   /admin/etat         { motdepasse }                        -> jours faits de tous les élèves
 //   /admin/reinitialiser{ motdepasse, empreinte, routine, jour|"tous" } -> remet à « non fait »
 //
+// Routine « Fluidité verbale » (séances orales, mesures et notes) :
+//   /parole/enregistrer { classe, code, jour, seance, bilan, ex1, ex2 } -> enregistre ou met à jour une séance
+//   /parole/etat        { classe, code }                      -> séances de l'élève (mesures, notes, retour)
+//   /admin/parole       { motdepasse }                        -> toutes les séances de tous les élèves
+//   /admin/parole/noter { motdepasse, cle, notes, retour }    -> enregistre les notes et le retour de Claude
+//   /admin/parole/supprimer { motdepasse, cle }               -> supprime une séance
+//
 // Secret : ADMIN_PASSWORD (le même mot de passe enseignant que MathSite).
 // Stockage KV « SUIVI » : clé  fait:<empreinte>:<routine>:<jour>  ->  { code, classe, date }
+//                        clé  parole:<empreinte>:<jour>:<séance>  ->  { code, classe, jour, seance, date, maj, bilan, ex1, ex2, notes, retour }
 
-const ROUTINES = ["probabilites", "technologie"];
+const ROUTINES = ["probabilites", "technologie", "parole"];
 const CLASSES = ["5e", "seconde"];
 const MAX_ECHECS = 10;          // tentatives de mot de passe avant blocage
 const BLOCAGE_SECONDES = 900;   // durée du blocage (15 min)
@@ -39,6 +47,11 @@ export default {
       if (chemin === "/etat") return await etatEleve(env, corps, cors);
       if (chemin === "/admin/etat") return await adminEtat(env, request, corps, cors);
       if (chemin === "/admin/reinitialiser") return await adminReinitialiser(env, request, corps, cors);
+      if (chemin === "/parole/enregistrer") return await paroleEnregistrer(env, corps, cors);
+      if (chemin === "/parole/etat") return await paroleEtat(env, corps, cors);
+      if (chemin === "/admin/parole") return await adminParole(env, request, corps, cors);
+      if (chemin === "/admin/parole/noter") return await adminParoleNoter(env, request, corps, cors);
+      if (chemin === "/admin/parole/supprimer") return await adminParoleSupprimer(env, request, corps, cors);
     } catch (e) {
       return json({ erreur: "Erreur du serveur" }, 500, cors);
     }
@@ -108,6 +121,104 @@ async function adminReinitialiser(env, request, c, cors) {
     if (await env.SUIVI.get(cle)) { await env.SUIVI.delete(cle); supprimes = 1; }
   }
   return json({ ok: true, supprimes }, 200, cors);
+}
+
+// ---------- Fluidité verbale : séances orales ----------
+// Une séance = une visite de la page parole.html ; elle est réenregistrée après chaque exercice (même clé).
+const CRITERES = {
+  ex1: { rythme: 15, continuite: 15, richesse: 10, liens: 10 },
+  ex2: { continuite: 15, debit: 10, structure: 15, voix: 10 }
+};
+const MAX_SEANCES = 300;
+const CLE_SEANCE = /^parole:[0-9a-f]{64}:\d{1,3}:\d{10,14}$/;
+
+const texteBorne = (s, max) => typeof s === "string" ? s.slice(0, max) : "";
+const nombreOuNull = x => (x === null || x === "" || x === undefined || !Number.isFinite(Number(x))) ? null : Math.round(Number(x) * 100) / 100;
+
+function notesValides(n) {            // ne garde que les critères connus, bornés par leur maximum ; null si absent
+  if (!n || typeof n !== "object") return null;
+  const sortie = {};
+  for (const ex of Object.keys(CRITERES)) {
+    sortie[ex] = {};
+    for (const [c, max] of Object.entries(CRITERES[ex])) {
+      const v = nombreOuNull(n[ex] && n[ex][c]);
+      sortie[ex][c] = v === null ? null : Math.min(max, Math.max(0, v));
+    }
+  }
+  return sortie;
+}
+
+function exerciceValide(e) {
+  if (!e || typeof e !== "object") return null;
+  const s = { texte: texteBorne(e.texte, 6000), aParle: e.aParle === true, reconnue: e.reconnue === true,
+    motImpose: typeof e.motImpose === "boolean" ? e.motImpose : null };
+  for (const k of ["duree", "mots", "differents", "delai", "silenceFinal", "pauses", "blancs", "plusLongue", "totalPauses", "debit", "hauteurSt", "tendanceDb", "remplissage"]) s[k] = nombreOuNull(e[k]);
+  s.auto = e.auto && typeof e.auto === "object" ? Object.fromEntries(Object.entries(e.auto).slice(0, 8).map(([k, v]) => [k.slice(0, 20), nombreOuNull(v)])) : {};
+  return s;
+}
+
+async function paroleEnregistrer(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  const jour = Number(c.jour);
+  if (!Number.isInteger(jour) || jour < 1 || jour > 100) return json({ erreur: "Jour invalide" }, 400, cors);
+  if (typeof c.seance !== "string" || !/^\d{10,14}$/.test(c.seance)) return json({ erreur: "Séance invalide" }, 400, cors);
+  const cle = `parole:${eleve.empreinte}:${jour}:${c.seance}`;
+  const ancien = JSON.parse((await env.SUIVI.get(cle)) || "null");
+  if (!ancien && (await toutesLesCles(env, `parole:${eleve.empreinte}:`)).length >= MAX_SEANCES) return json({ erreur: "Trop de séances enregistrées" }, 429, cors);
+  const maintenant = new Date().toISOString();
+  const valeur = {
+    code: eleve.code, classe: c.classe, jour, seance: c.seance,
+    date: ancien ? ancien.date : maintenant, maj: maintenant,
+    bilan: texteBorne(c.bilan, 8000), ex1: exerciceValide(c.ex1), ex2: exerciceValide(c.ex2),
+    notes: ancien ? ancien.notes : null, retour: ancien ? ancien.retour : ""
+  };
+  await env.SUIVI.put(cle, JSON.stringify(valeur));
+  return json({ ok: true }, 200, cors);
+}
+
+async function seancesDe(env, prefixe) {
+  const liste = [];
+  for (const nom of await toutesLesCles(env, prefixe)) {
+    const v = JSON.parse((await env.SUIVI.get(nom)) || "null");
+    if (v) liste.push({ cle: nom, ...v });
+  }
+  return liste.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+async function paroleEtat(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  const seances = (await seancesDe(env, `parole:${eleve.empreinte}:`)).map(({ cle, bilan, ...reste }) => reste);
+  return json({ ok: true, seances }, 200, cors);
+}
+
+async function adminParole(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  return json({ ok: true, seances: await seancesDe(env, "parole:") }, 200, cors);
+}
+
+async function adminParoleNoter(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  if (typeof c.cle !== "string" || !CLE_SEANCE.test(c.cle)) return json({ erreur: "Séance invalide" }, 400, cors);
+  const v = JSON.parse((await env.SUIVI.get(c.cle)) || "null");
+  if (!v) return json({ erreur: "Séance introuvable" }, 404, cors);
+  v.notes = notesValides(c.notes);
+  v.retour = texteBorne(c.retour, 8000);
+  v.notesLe = new Date().toISOString();
+  await env.SUIVI.put(c.cle, JSON.stringify(v));
+  return json({ ok: true, notes: v.notes }, 200, cors);
+}
+
+async function adminParoleSupprimer(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  if (typeof c.cle !== "string" || !CLE_SEANCE.test(c.cle)) return json({ erreur: "Séance invalide" }, 400, cors);
+  const existe = !!(await env.SUIVI.get(c.cle));
+  if (existe) await env.SUIVI.delete(c.cle);
+  return json({ ok: true, supprimees: existe ? 1 : 0 }, 200, cors);
 }
 
 // Mot de passe enseignant : comparé par empreinte ; blocage temporaire après trop d'échecs.

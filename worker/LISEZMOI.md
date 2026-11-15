@@ -41,10 +41,26 @@ La dernière commande affiche l'adresse du Worker, de la forme
 | `POST /etat` | l'élève | renvoie ses jours faits (pour synchroniser ses appareils) |
 | `POST /admin/etat` | l'enseignant | liste les élèves et leurs jours faits |
 | `POST /admin/reinitialiser` | l'enseignant | remet un jour (ou tous) à « non fait » |
+| `POST /parole/enregistrer` | l'élève | enregistre ou met à jour une séance de « Fluidité verbale » (mesures, texte, bilan) |
+| `POST /parole/etat` | l'élève | renvoie ses séances avec leurs notes (page « Mon suivi ») |
+| `POST /admin/parole` | l'enseignant | liste toutes les séances de tous les élèves |
+| `POST /admin/parole/noter` | l'enseignant | enregistre les notes (par critère) et le retour de Claude |
+| `POST /admin/parole/supprimer` | l'enseignant | supprime une séance |
 
 - Les codes ne sont jamais écrits dans le dépôt : seules leurs empreintes (SHA-256) figurent dans `wrangler.toml`.
 - Après 10 mots de passe erronés depuis une même adresse, l'accès enseignant est bloqué 15 minutes.
 - Seuls les élèves ayant au moins un jour fait apparaissent dans l'espace enseignant.
+
+## Mettre à jour le Worker (version 1.1 : routine « Fluidité verbale »)
+
+La routine « Fluidité verbale » ajoute des routes au Worker. Après avoir récupéré cette version du dépôt, republier le Worker (le KV, le mot de passe et `wrangler.toml` restent inchangés) :
+
+```bash
+cd worker
+npx wrangler deploy
+```
+
+Tant que le Worker n'est pas republié, la page `parole.html` garde chaque séance sur l'appareil de l'élève et la renvoie à l'ouverture suivante ; l'espace enseignant affiche un message l'invitant à republier.
 
 ## Tester en local
 

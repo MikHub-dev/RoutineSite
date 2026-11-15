@@ -43,6 +43,22 @@
   .jour-lien:hover, .jour-lien:focus-visible { border-color: var(--bleu); color: var(--bleu); outline: none; }
   .jour-lien.bilan { border-style: dashed; }
   @media (max-width: 760px) { .module-ens { grid-template-columns: 1fr; } }
+  .parole-ens { margin-bottom: 26px; }
+  .parole-ens h2 { margin: 0 0 6px; font-size: 22px; }
+  .seance-p { background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; padding: 16px 20px; margin-bottom: 14px; }
+  .seance-p h3 { margin: 0 0 6px; font-size: 17px; }
+  .seance-p h3 small { color: var(--doux); font-weight: 400; margin-left: 8px; }
+  .seance-p h4 { margin: 14px 0 4px; font-size: 15px; }
+  .seance-p pre { white-space: pre-wrap; font: inherit; font-size: 14px; color: var(--doux); background: var(--panneau-2); border: 1px solid var(--bord); border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+  .notes-tab { border-collapse: collapse; font-size: 14px; margin: 4px 0; }
+  .notes-tab th, .notes-tab td { padding: 4px 14px 4px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--bord); }
+  .notes-tab th { color: var(--doux); font-weight: 600; font-size: 13px; }
+  .notes-tab input { width: 72px; padding: 4px 6px; background: var(--fond); color: var(--texte); border: 1px solid var(--bord); border-radius: 6px; font: inherit; text-transform: none; letter-spacing: 0; }
+  .seance-p textarea { width: 100%; min-height: 84px; resize: vertical; padding: 8px 10px; background: var(--fond); color: var(--texte); border: 1px solid var(--bord); border-radius: 6px; font: inherit; font-size: 14px; margin-top: 8px; }
+  .seance-p .barre { margin: 10px 0 0; }
+  .total-p { font-weight: 700; margin: 6px 0 0; }
+  .grille-details h4 { margin: 14px 0 4px; }
+  .small { font-size: 13px; color: var(--doux); }
 </style>
 </head>
 <body>
@@ -64,9 +80,11 @@
 <main class="page" id="contenu"></main>
 
 <script src="commun.js"></script>
+<script src="parole-grille.js"></script>
 <script>
 const CLE_ADMIN = "routinesite:admin";
 const NOMS = { probabilites: "Probabilités en 100 jours", technologie: "Technologie numérique en 100 jours" };
+const NOMS_ALL = { ...NOMS, parole: "Fluidité verbale en 100 jours (POC)" };
 const FICHIERS = { probabilites: "data/probabilites.json", technologie: "data/technologie.json" };
 
 const lireMdp = () => { try { return sessionStorage.getItem(CLE_ADMIN) || ""; } catch (e) { return ""; } };
@@ -117,13 +135,18 @@ async function afficher() {
   document.getElementById("quitter").hidden = false;
   const eleves = reponse.eleves;
   const catalogue = await chargerCatalogue();
+  let paroleSeances = null, paroleErreur = "";
+  try { paroleSeances = (await appelerSuivi("/admin/parole", { motdepasse: mdp })).seances; }
+  catch (e) { paroleErreur = e.statut === 404 ? "Le Worker n'a pas encore été mis à jour (route /admin/parole absente) : redéployez-le, voir worker/LISEZMOI.md." : e.message; }
   document.getElementById("contenu").innerHTML = `
     <h1 class="titre">Suivi des élèves</h1>
     <p class="aide">Une case verte est un jour fait. Cliquez sur une case verte pour la remettre à « non fait » : l'élève devra le refaire et le renvoyer.</p>
     <div class="barre"><button class="btn btn--secondaire" onclick="afficher()">Actualiser</button><span class="aide" style="margin:0">${eleves.length} élève${eleves.length > 1 ? "s" : ""} avec au moins un jour fait</span></div>
     <p class="message" id="message" role="status"></p>
     ${catalogueHtml(catalogue)}
+    ${paroleSectionHtml(paroleSeances, paroleErreur)}
     ${eleves.length ? eleves.map(eleveHtml).join("") : `<p class="aide">Aucun jour n'a encore été enregistré.</p>`}`;
+  initTotaux();
 }
 
 // Modules et jours de chaque routine, pour les liens vers les exercices et leurs corrigés (null si le fichier ne se charge pas).
@@ -173,12 +196,12 @@ function eleveHtml(e) {
   const total = Object.values(e.jours).reduce((s, l) => s + l.length, 0);
   return `<section class="eleve">
     <div class="eleve-tete"><h2>${esc(e.code)}</h2><span class="aide" style="margin:0">${esc(nomClasse(e.classe))} · ${total} jour${total > 1 ? "s" : ""} fait${total > 1 ? "s" : ""}</span></div>
-    ${Object.keys(NOMS).map(r => parcoursHtml(e, r)).join("")}
+    ${Object.keys(NOMS_ALL).map(r => parcoursHtml(e, r)).join("")}
   </section>`;
 }
 
 function parcoursHtml(e, routine) {
-  const faits = new Map(e.jours[routine].map(j => [j.n, j.date]));
+  const faits = new Map((e.jours[routine] || []).map(j => [j.n, j.date]));
   const cases = Array.from({ length: 100 }, (_, i) => {
     const n = i + 1;
     return faits.has(n)
@@ -186,13 +209,13 @@ function parcoursHtml(e, routine) {
       : `<button class="case" disabled title="Jour ${n} : non fait">${n}</button>`;
   }).join("");
   return `<div class="parcours">
-    <div class="parcours-tete"><h3>${esc(NOMS[routine])}<small>${faits.size}/100</small></h3>
-      <span><button class="lien" onclick="ouvrirCatalogue('${routine}')">Exercices et corrigés</button>${faits.size ? ` · <button class="lien" onclick="remettre('${e.empreinte}','${esc(e.code)}','${routine}','tous')">Tout remettre à « non fait »</button>` : ""}</span></div>
+    <div class="parcours-tete"><h3>${esc(NOMS_ALL[routine])}<small>${faits.size}/100</small></h3>
+      <span>${FICHIERS[routine] ? `<button class="lien" onclick="ouvrirCatalogue('${routine}')">Exercices et corrigés</button>` : `<button class="lien" onclick="ouvrirParole()">Séances de parole</button>`}${faits.size ? ` · <button class="lien" onclick="remettre('${e.empreinte}','${esc(e.code)}','${routine}','tous')">Tout remettre à « non fait »</button>` : ""}</span></div>
     <div class="grille">${cases}</div></div>`;
 }
 
 async function remettre(empreinte, code, routine, jour) {
-  const quoi = jour === "tous" ? `tous les jours de « ${NOMS[routine]} »` : `le jour ${jour} de « ${NOMS[routine]} »`;
+  const quoi = jour === "tous" ? `tous les jours de « ${NOMS_ALL[routine]} »` : `le jour ${jour} de « ${NOMS_ALL[routine]} »`;
   if (!confirm(`Remettre ${quoi} à « non fait » pour ${code} ?`)) return;
   try {
     await appelerSuivi("/admin/reinitialiser", { motdepasse: lireMdp(), empreinte, routine, jour });
@@ -203,6 +226,102 @@ async function remettre(empreinte, code, routine, jour) {
   await afficher();
   document.getElementById("message").textContent = `✓ ${code} : ${quoi} remis à « non fait ».`;
 }
+
+// ---------- Fluidité verbale (POC) : séances, notes, grille ----------
+let SEANCES = {};
+const TITRES_EX = { ex1: GRILLE.ex1.titre, ex2: GRILLE.ex2.titre };
+
+function paroleSectionHtml(seances, erreur) {
+  let corps;
+  if (erreur) corps = `<p class="erreur">${esc(erreur)}</p>`;
+  else if (!seances.length) corps = `<p class="aide">Aucune séance enregistrée pour l'instant. Elles apparaissent ici dès qu'un élève fait un exercice sur la page « Fluidité verbale ».</p>`;
+  else {
+    SEANCES = Object.fromEntries(seances.map(s => [s.cle, s]));
+    corps = seances.slice().reverse().map(seanceHtml).join("");
+  }
+  return `<section class="parole-ens" id="parole-ens">
+    <h2>Fluidité verbale (POC) : séances et notes</h2>
+    <p class="aide">Chaque séance est enregistrée automatiquement par la page de l'élève, avec ses mesures. Les points « mesurés » sont préremplis ; saisissez les critères jugés (liens, structure) ou collez le retour de Claude : sa ligne <code>[NOTES]</code> remplit les champs.</p>
+    ${grilleHtml()}
+    ${corps}
+  </section>`;
+}
+
+function seanceHtml(s) {
+  const notes = s.notes || {};
+  const exos = ["ex1", "ex2"].filter(ex => s[ex]).map(ex => {
+    const m = s[ex], auto = m.auto || {};
+    const lignes = GRILLE[ex].criteres.map(c => {
+      const retenue = notes[ex] && notes[ex][c.id] != null ? notes[ex][c.id] : (auto[c.id] != null ? auto[c.id] : "");
+      return `<tr><td>${esc(c.nom)} <span class="small">(${esc(c.type)})</span></td><td>${auto[c.id] != null ? nf(auto[c.id]) : "—"}</td>
+        <td><input type="number" min="0" max="${c.max}" step="0.5" data-ex="${ex}" data-c="${c.id}" value="${esc(retenue)}" oninput="majTotaux('${esc(s.cle)}')"> <span class="small">/ ${c.max}</span></td></tr>`;
+    }).join("");
+    const resume = ex === "ex1"
+      ? `${nf(m.mots, 0)} mots (${nf(m.differents, 0)} différents) · ${nf(m.blancs, 0)} blancs ≥ 2 s · plus longue pause ${nf(m.plusLongue)} s · délai ${nf(m.delai)} s · silence final ${nf(m.silenceFinal)} s`
+      : `${nf(m.mots, 0)} mots · débit ${nf(m.debit, 0)} mots/min · ${nf(m.pauses, 0)} pauses ≥ 0,7 s dont ${nf(m.blancs, 0)} blancs · hauteur ${nf(m.hauteurSt)} demi-tons · volume ${nf(m.tendanceDb)} dB · mot imposé : ${m.motImpose == null ? "—" : (m.motImpose ? "utilisé" : "absent")}`;
+    return `<h4>${esc(TITRES_EX[ex])}</h4>
+      <p class="small">${esc(resume)}</p>
+      <details><summary class="small">Transcription</summary><pre>${esc(m.texte || "(vide)")}</pre></details>
+      <table class="notes-tab"><thead><tr><th>Critère</th><th>Mesuré</th><th>Note retenue</th></tr></thead><tbody>${lignes}</tbody></table>
+      <p class="total-p" data-total="${ex}"></p>`;
+  }).join("");
+  const etat = s.notes ? `<span style="color:var(--vert)">✓ noté${s.notesLe ? " le " + esc(dateFr(s.notesLe)) : ""}</span>` : `<span style="color:var(--rouge)">à noter</span>`;
+  return `<div class="seance-p" id="seance-${esc(s.cle.replace(/:/g, "_"))}" data-cle="${esc(s.cle)}">
+    <h3>${esc(s.code)} · ${esc(nomClasse(s.classe))} · jour ${esc(s.jour)}<small>${esc(dateFr(s.date))} · ${etat}</small></h3>
+    ${s.bilan ? `<details><summary class="small">Bilan envoyé (à coller à Claude)</summary><pre>${esc(s.bilan)}</pre><button class="btn btn--secondaire" type="button" onclick="copierBilan('${esc(s.cle)}')">Copier le bilan</button></details>` : ""}
+    ${exos}
+    <label class="small" for="retour-${esc(s.cle.replace(/:/g, "_"))}">Retour de Claude (facultatif ; la ligne [NOTES] remplit les champs ci-dessus)</label>
+    <textarea id="retour-${esc(s.cle.replace(/:/g, "_"))}" data-retour oninput="lireRetour('${esc(s.cle)}')">${esc(s.retour || "")}</textarea>
+    <div class="barre"><button class="btn" type="button" onclick="enregistrerNotes('${esc(s.cle)}')">Enregistrer les notes</button>
+      <button class="lien" type="button" onclick="supprimerSeance('${esc(s.cle)}')">Supprimer cette séance</button>
+      <span class="small" data-msg></span></div>
+  </div>`;
+}
+
+const blocSeance = cle => document.querySelector(`.seance-p[data-cle="${cle}"]`);
+function notesDuFormulaire(cle) {
+  const b = blocSeance(cle), notes = { ex1: {}, ex2: {} };
+  b.querySelectorAll("input[data-ex]").forEach(i => { notes[i.dataset.ex][i.dataset.c] = i.value === "" ? null : Number(i.value); });
+  return notes;
+}
+function majTotaux(cle) {
+  const b = blocSeance(cle); if (!b) return;
+  const notes = notesDuFormulaire(cle);
+  b.querySelectorAll("[data-total]").forEach(p => {
+    const ex = p.dataset.total, t = totalExercice(ex, notes[ex]);
+    p.textContent = t != null ? `Total : ${nf(t)} / ${GRILLE[ex].total}` : "Total : en attente des critères jugés";
+  });
+}
+function lireRetour(cle) {
+  const b = blocSeance(cle), n = lireLigneNotes(b.querySelector("[data-retour]").value);
+  if (!n) return;
+  ["ex1", "ex2"].forEach(ex => Object.entries(n[ex]).forEach(([c, v]) => { const i = b.querySelector(`input[data-ex="${ex}"][data-c="${c}"]`); if (i) i.value = v; }));
+  majTotaux(cle);
+  b.querySelector("[data-msg]").textContent = "Notes lues dans la ligne [NOTES] : vérifiez puis enregistrez.";
+}
+async function enregistrerNotes(cle) {
+  const b = blocSeance(cle), msg = b.querySelector("[data-msg]");
+  try {
+    await appelerSuivi("/admin/parole/noter", { motdepasse: lireMdp(), cle, notes: notesDuFormulaire(cle), retour: b.querySelector("[data-retour]").value });
+  } catch (e) {
+    if (e.statut === 401) { ecrireMdp(""); return pageConnexion("Session expirée : saisissez de nouveau le mot de passe."); }
+    msg.textContent = "Échec : " + e.message; return;
+  }
+  await afficher();
+  const nb = blocSeance(cle); if (nb) { nb.querySelector("[data-msg]").textContent = "✓ Notes enregistrées."; nb.scrollIntoView({ block: "center" }); }
+}
+async function supprimerSeance(cle) {
+  if (!confirm("Supprimer définitivement cette séance et ses notes ?")) return;
+  try { await appelerSuivi("/admin/parole/supprimer", { motdepasse: lireMdp(), cle }); }
+  catch (e) { alert("Échec : " + e.message); return; }
+  await afficher();
+}
+async function copierBilan(cle) {
+  const s = SEANCES[cle]; if (!s) return;
+  try { await navigator.clipboard.writeText(s.bilan); alert("Bilan copié."); } catch (e) { alert("Copie impossible : sélectionnez le texte à la main."); }
+}
+function ouvrirParole() { const s = document.getElementById("parole-ens"); if (s) s.scrollIntoView({ behavior: "smooth", block: "start" }); }
+function initTotaux() { Object.keys(SEANCES).forEach(majTotaux); }
 
 document.getElementById("quitter").addEventListener("click", () => { ecrireMdp(""); afficher(); });
 afficher();
