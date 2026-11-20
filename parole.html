@@ -27,6 +27,8 @@
   .save.ok{color:var(--ok)} .save.ko{color:var(--warn)}
   .retour-auto{white-space:pre-wrap;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:8px 0;line-height:1.55}
   .retour-auto.attente{color:var(--muted);white-space:normal}
+  .note-jour{border:1px solid var(--accent);border-radius:12px;padding:12px 16px;margin:8px 0;font-size:1.05rem}
+  .note-jour b{font-size:1.6rem}
   .tag-auto{font-size:.75rem;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:0 5px;margin-left:4px}
 
     *{box-sizing:border-box}
@@ -116,6 +118,7 @@
   <section class="card" id="retour">
     <h2>Retour du jour</h2>
     <p class="consigne">Généré automatiquement après chaque exercice. Tu peux l'écouter lu à voix haute (voix de synthèse de ton navigateur).</p>
+    <div id="noteJour" class="note-jour hidden"></div>
     <div id="retourAuto" class="retour-auto attente">Fais un exercice : ton retour apparaîtra ici.</div>
     <div class="row" style="margin-top:8px"><button id="btnLire" class="primary">▶ Lire à voix haute</button><button id="btnStopLire">■ Stop</button><button id="btnRelance" class="hidden">Relancer l'analyse</button><span id="ttsMsg" class="small"></span></div>
   </section>
@@ -541,6 +544,13 @@ function afficherRetour(liste, active){
   const cible=(mine&&(mine.retour||(mine.analyse&&mine.analyse.retour)))? mine : liste.slice().reverse().find(s=>s.retour||(s.analyse&&s.analyse.retour));
   const courante=mine||liste[liste.length-1];
   btn.classList.add('hidden'); SEANCE_RELANCE=null; RETOUR_TEXTE='';
+  const nz=document.getElementById('noteJour'), nn=courante&&noteSur100(courante);
+  if(nn){
+    const tag=nn.auto?' <span class="tag-auto">auto</span>':'';
+    nz.innerHTML= nn.complet ? `Note de la séance : <b>${nf(nn.somme,0)}/100</b> · ${esc(niveauNote(nn.somme))}${tag}`
+      : `Note provisoire : <b>${nf(nn.somme,0)}/${nn.max}</b>${tag}<br><span class="small">Le total sur 100 apparaît quand les deux exercices sont faits.</span>`;
+    nz.classList.remove('hidden');
+  } else nz.classList.add('hidden');
   const texte=cible? (cible.retour||cible.analyse.retour) : '';
   const a=courante&&courante.analyse;
   let entete='';
@@ -550,7 +560,7 @@ function afficherRetour(liste, active){
   if(a&&(a.statut==='echec'||(a.statut==='en_cours'&&Date.now()-Date.parse(a.debut||0)>90000))){ btn.classList.remove('hidden'); SEANCE_RELANCE=courante; }
   if(!texte && !entete){
     zone.className='retour-auto attente';
-    zone.textContent = active===false ? "L'analyse automatique n'est pas activée sur le site : ton enseignant doit la mettre en service." : (liste.length? "Analyse en attente…" : "Fais un exercice : ton retour apparaîtra ici.");
+    zone.textContent = active===undefined ? "Le serveur de suivi n'a pas encore été mis à jour : l'analyse automatique ne peut pas démarrer. Préviens ton enseignant." : active===false ? "L'analyse automatique n'est pas activée sur le site : ton enseignant doit la mettre en service." : (liste.length? "Analyse en attente…" : "Fais un exercice : ton retour apparaîtra ici.");
     return;
   }
   zone.className='retour-auto'+(texte?'':' attente');
