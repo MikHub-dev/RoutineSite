@@ -62,21 +62,24 @@ function totalExercice(ex, notesEx) {
   for (const c of GRILLE[ex].criteres) { const v = notesEx[c.id]; if (v == null) return null; s += v; }
   return s;
 }
-// Note ramenée sur 100 à partir des exercices notés (un seul exercice noté : /50 ramené sur 100).
+// Notes retenues pour une séance : celles validées par l'enseignant, sinon les notes automatiques du Worker (null si aucune).
+function notesEffectives(seance) { return seance.notes || seance.notesAuto || null; }
+// Note ramenée sur 100 à partir des exercices notés (un seul exercice noté : /50 ramené sur 100). « auto » : notes non validées par l'enseignant.
 function noteSur100(seance) {
   let somme = 0, max = 0;
+  const notes = notesEffectives(seance);
   ["ex1", "ex2"].forEach(ex => {
-    const t = totalExercice(ex, seance.notes && seance.notes[ex]);
+    const t = totalExercice(ex, notes && notes[ex]);
     if (t != null) { somme += t; max += GRILLE[ex].total; }
   });
-  return max ? { pct: somme / max * 100, complet: max === 100, somme, max } : null;
+  return max ? { pct: somme / max * 100, complet: max === 100, somme, max, auto: !seance.notes } : null;
 }
 
 // Tableau « critère / points mesurés / points finals » pour un exercice.
 function tableauNotesHtml(ex, auto, finales) {
   const lignes = GRILLE[ex].criteres.map(c => {
     const a = auto ? auto[c.id] : null, f = finales ? finales[c.id] : null;
-    const cellule = f != null ? `<b>${nf(f)}</b>` : (a != null ? `${nf(a)} <span class="small">(mesuré)</span>` : `<span class="small">jugé avec le retour de Claude</span>`);
+    const cellule = f != null ? `<b>${nf(f)}</b>` : (a != null ? `${nf(a)} <span class="small">(mesuré)</span>` : `<span class="small">jugé par l'analyse automatique</span>`);
     return `<tr><td>${esc(c.nom)}</td><td>${cellule}</td><td class="small">/ ${c.max}</td></tr>`;
   }).join("");
   const t = totalExercice(ex, finales);
@@ -93,7 +96,7 @@ function grilleHtml() {
       GRILLE[ex].criteres.map(c => `<tr><td>${esc(c.nom)}</td><td>${c.max}</td><td>${esc(c.type)}</td><td class="small">${esc(c.regle)}</td></tr>`).join("")
     }</tbody></table>`;
   return `<details class="grille-details"><summary>Grille de notation (version ${GRILLE_VERSION})</summary>
-    <p class="small">Chaque exercice est noté sur 50, le total sur 100. 75 points sont mesurés par la page (pauses, rythme, voix…) ; 25 sont jugés à la lecture de la transcription (pertinence des liens, structure de l'histoire).</p>
+    <p class="small">Chaque exercice est noté sur 50, le total sur 100. 75 points sont mesurés par la page (pauses, rythme, voix…) ; 25 sont jugés à la lecture de la transcription (pertinence des liens, structure de l'histoire) par l'analyse automatique du site, que ton enseignant peut corriger.</p>
     ${tab("ex1")}${tab("ex2")}
     <p class="small">Niveaux : ${NIVEAUX.map((n, i) => `${n[0]}${i < NIVEAUX.length - 1 ? "–" + (NIVEAUX[i + 1][0] - 1) : "–100"} ${n[1]}`).join(" · ")}.</p>
   </details>`;

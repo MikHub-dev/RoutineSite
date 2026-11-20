@@ -17,6 +17,14 @@ EMPREINTES = '{"5e":["489c1aecd78964bf6e285c1425430f40b6a14f6cc4ba1f9ffd2bc2f48b
 # Le jeton d'accès est un secret : npx wrangler secret put GITHUB_TOKEN (droit « Contents : lecture et écriture » sur ce seul dépôt).
 AUDIO_REPO = "MikHub-dev/RoutineSite-audio"
 
+# Analyse automatique des séances de « Fluidité verbale » : Cloudflare Workers AI (franchise gratuite de 10 000 « neurons » par jour,
+# environ 110 par séance ; aucune clé à créer). Modèles par défaut : mistral-small-3.1-24b-instruct (jugement et retour) et bge-m3 (liens).
+# Pour changer de modèle, décommenter et adapter :
+# AI_MODEL = "@cf/mistralai/mistral-small-3.1-24b-instruct"
+# AI_EMBED_MODEL = "@cf/baai/bge-m3"
+[ai]
+binding = "AI"
+
 # Stockage : un espace KV (créé avec « npx wrangler kv namespace create SUIVI »). Remplacer l'id ci-dessous.
 [[kv_namespaces]]
 binding = "SUIVI"

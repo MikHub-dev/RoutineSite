@@ -1,4 +1,4 @@
-// Version : 1.3 (séances de « Fluidité verbale », archivage audio dans un dépôt GitHub privé, accès et remise à zéro réservés à l'enseignant)
+// Version : 1.4 (séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
 // Worker « routinesite-suivi » : suivi des jours faits par élève pour RoutineSite.
 //
 // Routes (toutes en POST, JSON) :
@@ -17,6 +17,12 @@
 //   /admin/parole/archive       { motdepasse }                -> liste les fichiers de l'archive audio
 //   /admin/parole/audio         { motdepasse, chemin }        -> sert un fichier de l'archive (lecture / téléchargement)
 //   /admin/parole/reinitialiser { motdepasse, empreinte, jour|"tous", audios:"garder"|"supprimer" } -> remise à zéro d'un jour
+//   /parole/analyser    { classe, code, jour, seance }            -> relance l'analyse automatique d'une séance (échec ou blocage)
+//   /admin/parole/analyser { motdepasse, cle }                    -> relance l'analyse d'une séance (sans plafond)
+//
+// Analyse automatique : lancée après chaque enregistrement de séance (en arrière-plan) avec Cloudflare Workers AI
+// (binding « AI » dans wrangler.toml, gratuit dans la franchise quotidienne, aucune clé) : un modèle de langage juge les critères
+// « jugés » et rédige le retour, un modèle d'embeddings recoupe la pertinence des liens. Voir analyse.js.
 //
 // Archivage audio : secret GITHUB_TOKEN (jeton limité au dépôt d'archive, droit « Contents : lecture et écriture »)
 // et variable AUDIO_REPO (« propriétaire/dépôt »). Le Worker refuse d'écrire si le dépôt n'est pas privé.
@@ -25,13 +31,15 @@
 // Stockage KV « SUIVI » : clé  fait:<empreinte>:<routine>:<jour>  ->  { code, classe, date }
 //                        clé  parole:<empreinte>:<jour>:<séance>  ->  { code, classe, jour, seance, date, maj, bilan, ex1, ex2, notes, retour }
 
+import { CRITERES, analyserSeance, signature } from "./analyse.js";
+
 const ROUTINES = ["probabilites", "technologie", "parole"];
 const CLASSES = ["5e", "seconde"];
 const MAX_ECHECS = 10;          // tentatives de mot de passe avant blocage
 const BLOCAGE_SECONDES = 900;   // durée du blocage (15 min)
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const origine = request.headers.get("Origin") || "";
     const autorisees = (env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
     const cors = {
@@ -54,7 +62,8 @@ export default {
       if (chemin === "/etat") return await etatEleve(env, corps, cors);
       if (chemin === "/admin/etat") return await adminEtat(env, request, corps, cors);
       if (chemin === "/admin/reinitialiser") return await adminReinitialiser(env, request, corps, cors);
-      if (chemin === "/parole/enregistrer") return await paroleEnregistrer(env, corps, cors);
+      if (chemin === "/parole/enregistrer") return await paroleEnregistrer(env, ctx, corps, cors);
+      if (chemin === "/parole/analyser") return await paroleAnalyser(env, ctx, corps, cors);
       if (chemin === "/parole/etat") return await paroleEtat(env, corps, cors);
       if (chemin === "/parole/audio") return await paroleAudio(env, corps, cors);
       if (chemin === "/admin/parole/archive") return await adminParoleArchive(env, request, corps, cors);
@@ -62,6 +71,7 @@ export default {
       if (chemin === "/admin/parole/reinitialiser") return await adminParoleReinitialiser(env, request, corps, cors);
       if (chemin === "/admin/parole") return await adminParole(env, request, corps, cors);
       if (chemin === "/admin/parole/noter") return await adminParoleNoter(env, request, corps, cors);
+      if (chemin === "/admin/parole/analyser") return await adminParoleAnalyser(env, ctx, request, corps, cors);
       if (chemin === "/admin/parole/supprimer") return await adminParoleSupprimer(env, request, corps, cors);
     } catch (e) {
       return json({ erreur: "Erreur du serveur" }, 500, cors);
@@ -137,10 +147,6 @@ async function adminReinitialiser(env, request, c, cors) {
 
 // ---------- Fluidité verbale : séances orales ----------
 // Une séance = une visite de la page parole.html ; elle est réenregistrée après chaque exercice (même clé).
-const CRITERES = {
-  ex1: { rythme: 15, continuite: 15, richesse: 10, liens: 10 },
-  ex2: { continuite: 15, debit: 10, structure: 15, voix: 10 }
-};
 const MAX_SEANCES = 300;
 const CLE_SEANCE = /^parole:[0-9a-f]{64}:\d{1,3}:\d{10,14}$/;
 
@@ -163,13 +169,13 @@ function notesValides(n) {            // ne garde que les critères connus, born
 function exerciceValide(e) {
   if (!e || typeof e !== "object") return null;
   const s = { texte: texteBorne(e.texte, 6000), aParle: e.aParle === true, reconnue: e.reconnue === true,
-    motImpose: typeof e.motImpose === "boolean" ? e.motImpose : null };
+    motImpose: typeof e.motImpose === "boolean" ? e.motImpose : null, motCle: texteBorne(e.motCle, 40) };
   for (const k of ["duree", "mots", "differents", "delai", "silenceFinal", "pauses", "blancs", "plusLongue", "totalPauses", "debit", "hauteurSt", "tendanceDb", "remplissage"]) s[k] = nombreOuNull(e[k]);
   s.auto = e.auto && typeof e.auto === "object" ? Object.fromEntries(Object.entries(e.auto).slice(0, 8).map(([k, v]) => [k.slice(0, 20), nombreOuNull(v)])) : {};
   return s;
 }
 
-async function paroleEnregistrer(env, c, cors) {
+async function paroleEnregistrer(env, ctx, c, cors) {
   const eleve = await identifier(env, c.classe, c.code);
   if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
   const jour = Number(c.jour);
@@ -185,8 +191,21 @@ async function paroleEnregistrer(env, c, cors) {
     bilan: texteBorne(c.bilan, 8000), ex1: exerciceValide(c.ex1), ex2: exerciceValide(c.ex2),
     notes: ancien ? ancien.notes : null, retour: ancien ? ancien.retour : "", audios: ancien ? (ancien.audios || []) : []
   };
+  if (ancien) { if (ancien.notesAuto) valeur.notesAuto = ancien.notesAuto; if (ancien.analyse) valeur.analyse = ancien.analyse; if (ancien.corrections) valeur.corrections = ancien.corrections; if (ancien.notesLe) valeur.notesLe = ancien.notesLe; }
+  // Analyse automatique : seulement si le contenu à analyser a changé, dans la limite des plafonds, et si le binding « AI » existe.
+  let lancer = false;
+  if (env.AI && (valeur.ex1 || valeur.ex2)) {
+    const sig = signature(valeur), a = valeur.analyse;
+    if (!a || a.sig !== sig) {
+      const nb = ((a && a.nb) || 0) + 1;
+      if (nb > MAX_ANALYSES_SEANCE) valeur.analyse = { ...(a || {}), sig, statut: "plafond", nb: nb - 1 };
+      else if (!(await reserverAnalyse(env, eleve.empreinte))) valeur.analyse = { ...(a || {}), sig, statut: "plafond", nb: nb - 1 };
+      else { valeur.analyse = { ...(a || {}), sig, statut: "en_cours", nb, debut: maintenant }; lancer = true; }
+    }
+  }
   await env.SUIVI.put(cle, JSON.stringify(valeur));
-  return json({ ok: true }, 200, cors);
+  if (lancer) arrierePlan(ctx, lancerAnalyse(env, cle));
+  return json({ ok: true, analyse: valeur.analyse ? valeur.analyse.statut : null }, 200, cors);
 }
 
 // ---------- Archivage des enregistrements audio (dépôt GitHub privé) ----------
@@ -362,6 +381,70 @@ async function adminParoleReinitialiser(env, request, c, cors) {
   return json({ ok: true, ...rapport }, 200, cors);
 }
 
+// ---------- Analyse automatique (Workers AI) ----------
+const MAX_ANALYSES_SEANCE = 8;       // analyses automatiques par séance (hors relance de l'enseignant)
+const MAX_ANALYSES_JOUR = 30;        // par élève et par jour (protège la franchise gratuite de Workers AI)
+const BLOCAGE_ANALYSE_MS = 90000;    // une analyse « en cours » depuis plus longtemps est considérée comme bloquée
+
+const arrierePlan = (ctx, promesse) => { const p = promesse.catch(() => {}); if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(p); };
+
+async function reserverAnalyse(env, empreinte) {
+  const cle = `analyses:${empreinte}:${new Date().toISOString().slice(0, 10)}`;
+  const n = Number(await env.SUIVI.get(cle)) || 0;
+  if (n >= MAX_ANALYSES_JOUR) return false;
+  await env.SUIVI.put(cle, String(n + 1), { expirationTtl: 172800 });
+  return true;
+}
+
+async function lancerAnalyse(env, cle) {
+  const s0 = JSON.parse((await env.SUIVI.get(cle)) || "null");
+  if (!s0) return;
+  const sig = signature(s0);
+  const historique = (await seancesDe(env, `parole:${cle.split(":")[1]}:`)).filter(x => x.cle !== cle && (x.ex1 || x.ex2)).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  let resultat;
+  try { resultat = await analyserSeance(env, s0, historique); }
+  catch (e) { resultat = { analyse: { statut: "echec", erreur: String(e && e.message || e).slice(0, 200) }, notesAuto: null }; }
+  const s1 = JSON.parse((await env.SUIVI.get(cle)) || "null");
+  if (!s1 || signature(s1) !== sig) return;          // séance supprimée ou modifiée entre-temps : une autre analyse prend le relais
+  s1.analyse = { ...resultat.analyse, sig, nb: (s1.analyse && s1.analyse.nb) || 1, le: new Date().toISOString() };
+  if (resultat.notesAuto) s1.notesAuto = resultat.notesAuto;
+  await env.SUIVI.put(cle, JSON.stringify(s1));
+}
+
+// Relance (élève ou enseignant) : seulement si la séance existe, que l'analyse est absente, en échec, en estimation ou bloquée.
+async function relancer(env, ctx, cle, { force, cors }) {
+  if (!env.AI) return json({ erreur: "Analyse automatique non activée sur le Worker (binding AI absent)" }, 503, cors);
+  const v = JSON.parse((await env.SUIVI.get(cle)) || "null");
+  if (!v || !(v.ex1 || v.ex2)) return json({ erreur: "Séance introuvable" }, 404, cors);
+  const a = v.analyse || {};
+  if (a.statut === "en_cours" && Date.now() - Date.parse(a.debut || 0) < BLOCAGE_ANALYSE_MS) return json({ ok: true, statut: "en_cours" }, 200, cors);
+  if (!force) {
+    if (a.statut === "ok" && a.sig === signature(v)) return json({ ok: true, statut: "ok" }, 200, cors);
+    if ((a.nb || 0) >= MAX_ANALYSES_SEANCE) return json({ erreur: "Nombre maximal d'analyses atteint pour cette séance : demande à ton enseignant" }, 429, cors);
+    if (!(await reserverAnalyse(env, cle.split(":")[1]))) return json({ erreur: "Limite d'analyses atteinte pour aujourd'hui : réessaie demain" }, 429, cors);
+  }
+  v.analyse = { ...a, sig: signature(v), statut: "en_cours", nb: force ? 1 : (a.nb || 0) + 1, debut: new Date().toISOString() };
+  await env.SUIVI.put(cle, JSON.stringify(v));
+  arrierePlan(ctx, lancerAnalyse(env, cle));
+  return json({ ok: true, statut: "en_cours" }, 200, cors);
+}
+
+async function paroleAnalyser(env, ctx, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  const jour = Number(c.jour);
+  if (!Number.isInteger(jour) || jour < 1 || jour > 100) return json({ erreur: "Jour invalide" }, 400, cors);
+  if (typeof c.seance !== "string" || !/^\d{10,14}$/.test(c.seance)) return json({ erreur: "Séance invalide" }, 400, cors);
+  return relancer(env, ctx, `parole:${eleve.empreinte}:${jour}:${c.seance}`, { force: false, cors });
+}
+
+async function adminParoleAnalyser(env, ctx, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  if (typeof c.cle !== "string" || !CLE_SEANCE.test(c.cle)) return json({ erreur: "Séance invalide" }, 400, cors);
+  return relancer(env, ctx, c.cle, { force: true, cors });
+}
+
 async function seancesDe(env, prefixe) {
   const liste = [];
   for (const nom of await toutesLesCles(env, prefixe)) {
@@ -374,8 +457,11 @@ async function seancesDe(env, prefixe) {
 async function paroleEtat(env, c, cors) {
   const eleve = await identifier(env, c.classe, c.code);
   if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
-  const seances = (await seancesDe(env, `parole:${eleve.empreinte}:`)).map(({ cle, bilan, audios, ...reste }) => reste);
-  return json({ ok: true, seances }, 200, cors);
+  const seances = (await seancesDe(env, `parole:${eleve.empreinte}:`)).map(({ cle, bilan, audios, corrections, analyse, ...reste }) => {
+    if (analyse) { const { indices, erreurEmbeddings, erreur, verifier, sig, ...visible } = analyse; reste.analyse = visible; }
+    return reste;
+  });
+  return json({ ok: true, seances, analyseActive: !!env.AI }, 200, cors);
 }
 
 async function adminParole(env, request, c, cors) {
@@ -391,6 +477,11 @@ async function adminParoleNoter(env, request, c, cors) {
   const v = JSON.parse((await env.SUIVI.get(c.cle)) || "null");
   if (!v) return json({ erreur: "Séance introuvable" }, 404, cors);
   v.notes = notesValides(c.notes);
+  v.corrections = [];       // écarts entre la note de l'enseignant et la note automatique (suivi de la fiabilité de l'analyse)
+  if (v.notesAuto) for (const ex of Object.keys(CRITERES)) for (const cr of Object.keys(CRITERES[ex])) {
+    const a = v.notesAuto[ex] && v.notesAuto[ex][cr], f = v.notes && v.notes[ex] && v.notes[ex][cr];
+    if (a != null && f != null && a !== f) v.corrections.push({ ex, critere: cr, auto: a, final: f });
+  }
   v.retour = texteBorne(c.retour, 8000);
   v.notesLe = new Date().toISOString();
   await env.SUIVI.put(c.cle, JSON.stringify(v));

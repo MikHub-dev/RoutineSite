@@ -255,20 +255,51 @@ function paroleSectionHtml(seances, erreur) {
   }
   return `<section class="parole-ens" id="parole-ens">
     <h2>Fluidité verbale (POC) : séances et notes</h2>
-    <p class="aide">Chaque séance est enregistrée automatiquement par la page de l'élève, avec ses mesures. Les points « mesurés » sont préremplis ; saisissez les critères jugés (liens, structure) ou collez le retour de Claude : sa ligne <code>[NOTES]</code> remplit les champs.</p>
+    <p class="aide">Chaque séance est enregistrée par la page de l'élève avec ses mesures, puis notée et commentée automatiquement (Cloudflare Workers AI) : les notes automatiques comptent tout de suite pour l'élève, sans action de votre part. Vous pouvez les corriger et les valider (bouton « Valider / corriger »), ou coller un retour approfondi de Claude : sa ligne <code>[NOTES]</code> remplit les champs. Vos corrections sont mémorisées pour suivre la fiabilité de l'analyse.</p>
+    ${resumeParole(seances)}
     ${grilleHtml()}
     ${erreur ? "" : archiveHtml()}
     ${corps}
   </section>`;
 }
 
+function resumeParole(seances) {
+  if (!seances || !seances.length) return "";
+  const aVerifier = seances.filter(s => s.analyse && s.analyse.verifier && !s.notes).length;
+  const sansNote = seances.filter(s => !s.notes && !s.notesAuto).length;
+  const corriges = seances.filter(s => (s.corrections || []).length).length;
+  const nb = (n, mot) => `${n} ${mot}${n > 1 ? "s" : ""}`;
+  return `<p class="aide"><b>${nb(seances.length, "séance")}</b> · ${aVerifier ? `<span style="color:var(--rouge)">${nb(aVerifier, "à vérifier")}</span> (jugement du modèle et indice de proximité des mots en désaccord)` : "aucune à vérifier"} · ${nb(sansNote, "sans note")} · ${nb(corriges, "corrigée")} par vos soins.</p>`;
+}
+const SOURCES = { modele: "modèle de langage", estimation: "estimation simple", "aucune voix": "aucune voix détectée" };
+function analyseHtml(s) {
+  const a = s.analyse;
+  if (!a) return `<p class="small">Analyse automatique : pas d'analyse (binding AI absent du Worker, ou séance enregistrée avant son activation). <button class="lien" type="button" onclick="relancerAnalyse('${esc(s.cle)}')">Lancer l'analyse</button></p>`;
+  const couleur = a.statut === "ok" ? "var(--vert)" : a.statut === "en_cours" ? "var(--doux)" : "var(--rouge)";
+  const libelle = { ok: "terminée", en_cours: "en cours", estimation: "terminée avec estimations (modèle indisponible)", echec: "en échec", plafond: "non lancée (plafond atteint)" }[a.statut] || a.statut;
+  const src = a.sources ? Object.entries(a.sources).map(([c, v]) => `${c === "liens" ? "liens" : "structure"} : ${SOURCES[v] || v}`).join(" · ") : "";
+  const i = a.indices || {};
+  const liens = i.liens ? `proximité moyenne des mots consécutifs ${nf(i.liens.moyenne, 2)} (médiane ${nf(i.liens.mediane, 2)}), ${i.liens.sauts} saut(s) sur ${i.liens.n} liens, estimation ${nf(i.estimationLiens)}/10` : "indice des liens indisponible";
+  const struct = i.structure ? `${i.structure.mots} mots, ${nf(i.structure.partDifferents * 100, 0)} % de mots différents, ${i.structure.connecteurs} connecteurs, estimation ${nf(i.estimationStructure)}/15` : "";
+  const corr = (s.corrections || []).length ? `<p class="small">Vos corrections : ${s.corrections.map(c => `${esc(c.ex === "ex1" ? "ex. 1" : "ex. 2")} ${esc(c.critere)} ${nf(c.auto)} → ${nf(c.final)}`).join(" · ")}</p>` : "";
+  const just = a.justifications ? [a.justifications.ex1, a.justifications.ex2].filter(Boolean).map(t => `<li>${esc(t)}</li>`).join("") : "";
+  return `<details${a.verifier ? " open" : ""}><summary class="small">Analyse automatique : <span style="color:${couleur}">${esc(libelle)}</span>${a.verifier ? ` · <b style="color:var(--rouge)">à vérifier</b>` : ""}${a.modele ? " · " + esc(a.modele.replace("@cf/", "")) : ""}</summary>
+    <p class="small">Source des critères jugés : ${esc(src || "—")}.</p>
+    ${a.verifier ? `<p class="small" style="color:var(--rouge)">Le jugement du modèle et l'indice de proximité des mots s'écartent d'au moins 3 points sur les liens : vérifiez la transcription.</p>` : ""}
+    <p class="small">Indices : ${esc(liens)}${struct ? " · " + esc(struct) : ""}.</p>
+    ${just ? `<ul class="small">${just}</ul>` : ""}
+    ${a.erreur ? `<p class="small">Erreur du modèle : ${esc(a.erreur)}</p>` : ""}${corr}
+    <button class="lien" type="button" onclick="relancerAnalyse('${esc(s.cle)}')">Relancer l'analyse</button></details>`;
+}
+
 function seanceHtml(s) {
-  const notes = s.notes || {};
+  const notes = s.notes || {}, notesAuto = s.notesAuto || {};
   const exos = ["ex1", "ex2"].filter(ex => s[ex]).map(ex => {
     const m = s[ex], auto = m.auto || {};
     const lignes = GRILLE[ex].criteres.map(c => {
-      const retenue = notes[ex] && notes[ex][c.id] != null ? notes[ex][c.id] : (auto[c.id] != null ? auto[c.id] : "");
-      return `<tr><td>${esc(c.nom)} <span class="small">(${esc(c.type)})</span></td><td>${auto[c.id] != null ? nf(auto[c.id]) : "—"}</td>
+      const na = notesAuto[ex] && notesAuto[ex][c.id] != null ? notesAuto[ex][c.id] : (auto[c.id] != null ? auto[c.id] : null);
+      const retenue = notes[ex] && notes[ex][c.id] != null ? notes[ex][c.id] : (na != null ? na : "");
+      return `<tr><td>${esc(c.nom)} <span class="small">(${esc(c.type)})</span></td><td>${na != null ? nf(na) : "—"}</td>
         <td><input type="number" min="0" max="${c.max}" step="0.5" data-ex="${ex}" data-c="${c.id}" value="${esc(retenue)}" oninput="majTotaux('${esc(s.cle)}')"> <span class="small">/ ${c.max}</span></td></tr>`;
     }).join("");
     const resume = ex === "ex1"
@@ -277,18 +308,21 @@ function seanceHtml(s) {
     return `<h4>${esc(TITRES_EX[ex])}</h4>
       <p class="small">${esc(resume)}</p>
       <details><summary class="small">Transcription</summary><pre>${esc(m.texte || "(vide)")}</pre></details>
-      <table class="notes-tab"><thead><tr><th>Critère</th><th>Mesuré</th><th>Note retenue</th></tr></thead><tbody>${lignes}</tbody></table>
+      <table class="notes-tab"><thead><tr><th>Critère</th><th>Automatique</th><th>Note retenue</th></tr></thead><tbody>${lignes}</tbody></table>
       <p class="total-p" data-total="${ex}"></p>`;
   }).join("");
-  const etat = s.notes ? `<span style="color:var(--vert)">✓ noté${s.notesLe ? " le " + esc(dateFr(s.notesLe)) : ""}</span>` : `<span style="color:var(--rouge)">à noter</span>`;
+  const etat = s.notes ? `<span style="color:var(--vert)">✓ validé${s.notesLe ? " le " + esc(dateFr(s.notesLe)) : ""}</span>`
+    : s.analyse && s.analyse.statut === "en_cours" ? `<span>analyse en cours</span>`
+    : s.notesAuto ? `<span style="color:var(--bleu)">noté automatiquement${s.analyse && s.analyse.verifier ? " · à vérifier" : ""}</span>` : `<span style="color:var(--rouge)">à noter</span>`;
   return `<div class="seance-p" id="seance-${esc(s.cle.replace(/:/g, "_"))}" data-cle="${esc(s.cle)}">
     <h3>${esc(s.code)} · ${esc(nomClasse(s.classe))} · jour ${esc(s.jour)}<small>${esc(dateFr(s.date))} · ${etat}</small></h3>
     ${audiosHtml(s)}
     ${s.bilan ? `<details><summary class="small">Bilan envoyé (à coller à Claude)</summary><pre>${esc(s.bilan)}</pre><button class="btn btn--secondaire" type="button" onclick="copierBilan('${esc(s.cle)}')">Copier le bilan</button></details>` : ""}
+    ${analyseHtml(s)}
     ${exos}
-    <label class="small" for="retour-${esc(s.cle.replace(/:/g, "_"))}">Retour de Claude (facultatif ; la ligne [NOTES] remplit les champs ci-dessus)</label>
-    <textarea id="retour-${esc(s.cle.replace(/:/g, "_"))}" data-retour oninput="lireRetour('${esc(s.cle)}')">${esc(s.retour || "")}</textarea>
-    <div class="barre"><button class="btn" type="button" onclick="enregistrerNotes('${esc(s.cle)}')">Enregistrer les notes</button>
+    <label class="small" for="retour-${esc(s.cle.replace(/:/g, "_"))}">Retour montré à l'élève (automatique, modifiable ; ou collez un retour de Claude : sa ligne [NOTES] remplit les champs ci-dessus)</label>
+    <textarea id="retour-${esc(s.cle.replace(/:/g, "_"))}" data-retour oninput="lireRetour('${esc(s.cle)}')">${esc(s.retour || (s.analyse && s.analyse.retour) || "")}</textarea>
+    <div class="barre"><button class="btn" type="button" onclick="enregistrerNotes('${esc(s.cle)}')">Valider / corriger les notes</button>
       <button class="lien" type="button" onclick="reinitParole('${esc(s.cle.split(":")[1])}','${esc(s.code)}',${Number(s.jour)})">Remettre ce jour à zéro…</button>
       <button class="lien" type="button" onclick="supprimerSeance('${esc(s.cle)}')">Supprimer cette séance seulement</button>
       <span class="small" data-msg></span></div>
@@ -425,6 +459,16 @@ async function enregistrerNotes(cle) {
   }
   await afficher();
   const nb = blocSeance(cle); if (nb) { nb.querySelector("[data-msg]").textContent = "✓ Notes enregistrées."; nb.scrollIntoView({ block: "center" }); }
+}
+async function relancerAnalyse(cle) {
+  const b = blocSeance(cle), msg = b && b.querySelector("[data-msg]");
+  try { await appelerSuivi("/admin/parole/analyser", { motdepasse: lireMdp(), cle }); }
+  catch (e) {
+    if (e.statut === 401) { ecrireMdp(""); return pageConnexion("Session expirée : saisissez de nouveau le mot de passe."); }
+    if (msg) msg.textContent = "Relance impossible : " + e.message; return;
+  }
+  if (msg) msg.textContent = "Analyse relancée : actualisation dans quelques secondes…";
+  setTimeout(afficher, 9000);
 }
 async function supprimerSeance(cle) {
   if (!confirm("Supprimer définitivement cette séance et ses notes ?")) return;

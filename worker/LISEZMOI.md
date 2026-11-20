@@ -50,6 +50,8 @@ La dernière commande affiche l'adresse du Worker, de la forme
 | `POST /admin/parole/archive` | l'enseignant | liste les fichiers de l'archive audio (mot de passe obligatoire) |
 | `POST /admin/parole/audio` | l'enseignant | sert un fichier de l'archive pour l'écouter ou le télécharger (mot de passe obligatoire) |
 | `POST /admin/parole/reinitialiser` | l'enseignant | remet un jour (ou tous) à zéro, en gardant ou en supprimant les audios |
+| `POST /parole/analyser` | l'élève | relance l'analyse automatique de sa séance (si elle a échoué ou est restée bloquée) |
+| `POST /admin/parole/analyser` | l'enseignant | relance l'analyse d'une séance, sans plafond |
 
 - Les codes ne sont jamais écrits dans le dépôt : seules leurs empreintes (SHA-256) figurent dans `wrangler.toml`.
 - Après 10 mots de passe erronés depuis une même adresse, l'accès enseignant est bloqué 15 minutes.
@@ -65,6 +67,33 @@ npx wrangler deploy
 ```
 
 Tant que le Worker n'est pas republié, la page `parole.html` garde chaque séance sur l'appareil de l'élève et la renvoie à l'ouverture suivante ; l'espace enseignant affiche un message l'invitant à republier.
+
+## Notes et retours automatiques (version 1.4 : Cloudflare Workers AI)
+
+Après chaque exercice, le Worker enregistre la séance puis l'analyse en arrière-plan (quelques secondes), sans clé API ni abonnement supplémentaire :
+
+- un modèle de langage (`@cf/mistralai/mistral-small-3.1-24b-instruct`) juge les 25 points « jugés » de la grille (pertinence des liens, structure de l'histoire) et rédige le retour : analyse, 3 axes au maximum, consigne pour la prochaine séance ; la comparaison avec les séances précédentes est calculée par le Worker lui-même ;
+- un modèle d'embeddings multilingue (`@cf/baai/bge-m3`) mesure la proximité de sens entre mots consécutifs : c'est un indice indépendant qui recoupe le jugement du modèle (écart de 3 points ou plus : la séance est marquée « à vérifier ») ;
+- si le modèle de langage est en panne, des estimations simples donnent une note provisoire et la séance est marquée « estimation » ; l'élève et l'enseignant peuvent relancer l'analyse.
+
+Les points « mesurés » (75 sur 100) sont calculés par la page de l'élève et seulement bornés par le Worker.
+
+**Activation** : le fichier `wrangler.toml` contient déjà la liaison `[ai] binding = "AI"`. Il suffit de republier le Worker (aucun secret à ajouter) :
+
+```bash
+cd worker
+npx wrangler deploy
+```
+
+Tant que le Worker n'est pas republié (ou si la liaison est retirée), rien ne change : les séances sont enregistrées, les points mesurés s'affichent, et on peut toujours coller le bilan à Claude.
+
+**Coût** : Workers AI est gratuit jusqu'à 10 000 « neurons » par jour. Une séance consomme environ 110 neurons (≈ 2 500 tokens lus et 600 écrits avec Mistral Small 3.1, tarifs Cloudflare à vérifier sur la page de tarifs), soit environ 1 % de la franchise. Au-delà, le tarif Workers Paid est de 0,011 $ pour 1 000 neurons. Plafonds du Worker : 8 analyses automatiques par séance et 30 par élève et par jour. Pour changer de modèle, définir `AI_MODEL` (jugement) ou `AI_EMBED_MODEL` (liens) dans `[vars]`.
+
+**Confidentialité** : seul le texte de la transcription et les mesures sont envoyés au modèle, jamais l'audio.
+
+**Notes de l'élève et de l'enseignant** : les notes automatiques comptent immédiatement (marquées « auto » sur la page de l'élève). Dans l'espace enseignant, « Valider / corriger les notes » enregistre les notes retenues ; chaque écart avec la note automatique est mémorisé (`corrections`) pour suivre la fiabilité de l'analyse. Un retour approfondi de Claude (avec sa ligne `[NOTES]`) peut toujours être collé à la place.
+
+**Calibration** : les seuils de l'indice de proximité (`SEUIL_SAUT`, `SIM_BASSE`, `SIM_HAUTE` dans `src/analyse.js`) sont provisoires. Après quelques séances, comparer dans l'espace enseignant (section « Analyse automatique ») l'indice et les notes corrigées, puis ajuster.
 
 ## Archiver les enregistrements audio (dépôt GitHub privé)
 
@@ -106,6 +135,7 @@ Si l'archive est inaccessible (jeton expiré, dépôt devenu public) alors qu'il
 
 ```bash
 node worker/test/worker.test.mjs
+node worker/test/analyse.test.mjs   # analyse automatique, avec Workers AI simulé
 ```
 
 ## Limites à connaître
