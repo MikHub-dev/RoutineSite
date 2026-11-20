@@ -68,6 +68,11 @@ npx wrangler deploy
 
 Tant que le Worker n'est pas republié, la page `parole.html` garde chaque séance sur l'appareil de l'élève et la renvoie à l'ouverture suivante ; l'espace enseignant affiche un message l'invitant à republier.
 
+## Publier sans terminal (sans Codespace)
+
+- **Déploiement automatique** : le fichier `.github/workflows/deployer-worker.yml` publie le Worker à chaque modification de `worker/` sur `main` (ou via GitHub > Actions > « Déployer le Worker » > Run workflow). Il faut créer une fois, dans GitHub > Settings > Secrets and variables > Actions, les secrets `CLOUDFLARE_API_TOKEN` (modèle « Edit Cloudflare Workers ») et `CLOUDFLARE_ACCOUNT_ID` (visible dans le tableau de bord Cloudflare).
+- **Copier-coller dans Cloudflare** : `worker/dist/worker.js` est le Worker complet en un seul fichier. Tableau de bord Cloudflare > Workers & Pages > `routinesite-suivi` > Edit code : remplacer tout le code par ce fichier, puis Deploy. Ajouter ensuite, dans Settings > Bindings, une liaison « Workers AI » nommée `AI`.
+
 ## Notes et retours automatiques (version 1.4 : Cloudflare Workers AI)
 
 Après chaque exercice, le Worker enregistre la séance puis l'analyse en arrière-plan (quelques secondes), sans clé API ni abonnement supplémentaire :

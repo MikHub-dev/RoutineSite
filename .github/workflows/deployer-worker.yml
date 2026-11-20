@@ -1,0 +1,22 @@
+# Publie le Worker « routinesite-suivi » à chaque modification du dossier worker/ sur main (ou à la demande).
+# Secrets GitHub à créer une fois (Settings > Secrets and variables > Actions) : CLOUDFLARE_API_TOKEN et CLOUDFLARE_ACCOUNT_ID.
+# Les secrets du Worker (ADMIN_PASSWORD, GITHUB_TOKEN) restent dans Cloudflare : ce déploiement ne les touche pas.
+name: Déployer le Worker
+on:
+  push:
+    branches: [main]
+    paths: ["worker/**", ".github/workflows/deployer-worker.yml"]
+  workflow_dispatch:
+jobs:
+  deployer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tests
+        run: node worker/test/worker.test.mjs && node worker/test/analyse.test.mjs
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
+          command: deploy
