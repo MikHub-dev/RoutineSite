@@ -28,7 +28,6 @@
   .retour-auto{white-space:pre-wrap;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:8px 0;line-height:1.55}
   .retour-auto.attente{color:var(--muted);white-space:normal}
   .tag-auto{font-size:.75rem;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:0 5px;margin-left:4px}
-  pre.ancien{white-space:pre-wrap;font:inherit;font-size:.9rem;color:var(--muted);margin:8px 0 0}
 
     *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -106,20 +105,12 @@
   <section class="card" id="ex1"></section>
   <section class="card" id="ex2"></section>
 
-  <section class="card" id="bilan">
-    <h2>Bilan du jour (facultatif)</h2>
-    <p class="consigne">Ton retour et tes notes arrivent tout seuls (voir « Retour du jour » plus bas). Pense à corriger la transcription si la reconnaissance s'est trompée : l'analyse est refaite avec le texte corrigé. Le bilan ci-dessous est facultatif : il sert seulement à demander un retour approfondi à Claude dans la conversation du projet « 30 minutes par jour ».</p>
-    <div class="row"><button id="btnBilan" class="primary" disabled>Générer le bilan</button><button id="btnCopy" disabled>Copier</button><span id="copyMsg" class="small"></span></div>
-    <textarea id="bilanTxt" rows="12" placeholder="Le bilan apparaîtra ici." readonly></textarea>
-    <p class="save" id="sauvegarde" role="status"></p>
-  </section>
-
   <section class="card" id="suivi">
     <h2>Mon suivi</h2>
     <p class="consigne">Chaque séance est enregistrée et notée automatiquement à la fin de chaque exercice. Les notes marquées « auto » peuvent être corrigées par ton enseignant.</p>
+    <p class="save" id="sauvegarde" role="status"></p>
     <div id="suiviContenu"><p class="small">Chargement…</p></div>
     <div id="grilleZone"></div>
-    <div id="ancienZone"></div>
   </section>
 
   <section class="card" id="retour">
@@ -127,9 +118,6 @@
     <p class="consigne">Généré automatiquement après chaque exercice. Tu peux l'écouter lu à voix haute (voix de synthèse de ton navigateur).</p>
     <div id="retourAuto" class="retour-auto attente">Fais un exercice : ton retour apparaîtra ici.</div>
     <div class="row" style="margin-top:8px"><button id="btnLire" class="primary">▶ Lire à voix haute</button><button id="btnStopLire">■ Stop</button><button id="btnRelance" class="hidden">Relancer l'analyse</button><span id="ttsMsg" class="small"></span></div>
-    <details><summary>Coller un retour approfondi de Claude (facultatif)</summary>
-      <textarea id="retourTxt" rows="6" placeholder="Colle ici un retour reçu de Claude, si tu en as demandé un."></textarea>
-    </details>
   </section>
 </main>
 
@@ -281,8 +269,8 @@ function creerExercice(cfg){
 
   btnStart.addEventListener('click', demarrer);
   btnStop.addEventListener('click', ()=>{ if(session) session.arreterTot=true; });
-  root.querySelector('[data-act="redo"]').addEventListener('click', ()=>{ delete resultats[cfg.id]; $('result').classList.add('hidden'); $('status').textContent='Prêt.'; $('timer').textContent=fmt(cfg.secondes); $('progress').style.width='0'; majBilanBtn(); });
-  root.querySelector('[data-act="recalc"]').addEventListener('click', ()=>{ const r=resultats[cfg.id]; if(!r) return; r.texte=$('txt').value.trim(); r.texteAnalyse=analyserTexte(r.texte, cfg.motImpose); afficher(r); majBilanBtn(); sauver(); });
+  root.querySelector('[data-act="redo"]').addEventListener('click', ()=>{ delete resultats[cfg.id]; $('result').classList.add('hidden'); $('status').textContent='Prêt.'; $('timer').textContent=fmt(cfg.secondes); $('progress').style.width='0'; });
+  root.querySelector('[data-act="recalc"]').addEventListener('click', ()=>{ const r=resultats[cfg.id]; if(!r) return; r.texte=$('txt').value.trim(); r.texteAnalyse=analyserTexte(r.texte, cfg.motImpose); afficher(r); sauver(); });
 
   async function demarrer(){
     btnStart.disabled=true; btnStop.disabled=true;
@@ -344,7 +332,7 @@ function creerExercice(cfg){
     const res={cfg, duree, seuil, plancher, frames, audio, texte:texte.trim(), blob, blobUrl: blob? URL.createObjectURL(blob):null, reconnue: !!SR};
     res.texteAnalyse=analyserTexte(res.texte, cfg.motImpose);
     resultats[cfg.id]=res;
-    live.classList.add('hidden'); afficher(res); btnStart.disabled=false; majBilanBtn(); sauver().then(()=>archiverAudio(cfg.id, res));
+    live.classList.add('hidden'); afficher(res); btnStart.disabled=false; sauver().then(()=>archiverAudio(cfg.id, res));
     $('status').textContent = SR ? 'Terminé. Relis la transcription et corrige-la si besoin.' : "Terminé. Saisis ton texte dans la zone ci-dessous (la reconnaissance vocale n'est pas disponible ici), puis « Recalculer ».";
   }
 
@@ -441,12 +429,12 @@ function metriques(r){
   m.auto=noterAuto(c.id, m);
   return m;
 }
-function instantane(){ return { jour:JOUR, seance:SEANCE, bilan:document.getElementById('bilanTxt').value||'', ex1:metriques(resultats.ex1), ex2:metriques(resultats.ex2) }; }
+function instantane(){ return { jour:JOUR, seance:SEANCE, ex1:metriques(resultats.ex1), ex2:metriques(resultats.ex2) }; }
 
 function afficherSauvegarde(ok, msg){ const z=document.getElementById('sauvegarde'); z.textContent=msg; z.className='save '+(ok?'ok':'ko'); }
 
 async function envoyer(entree){
-  await appelerSuivi('/parole/enregistrer', { classe:SESSION.classe, code:SESSION.code, jour:entree.jour, seance:entree.seance, bilan:entree.bilan, ex1:entree.ex1, ex2:entree.ex2 });
+  await appelerSuivi('/parole/enregistrer', { classe:SESSION.classe, code:SESSION.code, jour:entree.jour, seance:entree.seance, ex1:entree.ex1, ex2:entree.ex2 });
 }
 // Enregistre la séance en cours : copie sur l'appareil (secours) puis envoi au site.
 async function sauver(){
@@ -542,9 +530,6 @@ async function rafraichirSuivi(){
   }
   zone.innerHTML=html;
   document.getElementById('grilleZone').innerHTML=grilleHtml();
-  const ancien=(()=>{ try{ return localStorage.getItem('parole-jour1'); }catch(_){ return null; } })();
-  const az=document.getElementById('ancienZone');
-  if(ancien && !az.dataset.fait){ az.dataset.fait='1'; az.innerHTML='<details><summary>Bilan du test précédent (conservé sur cet appareil)</summary><pre class="ancien"></pre></details>'; az.querySelector('pre').textContent=ancien; }
 }
 
 // ---------- Retour automatique ----------
@@ -565,7 +550,7 @@ function afficherRetour(liste, active){
   if(a&&(a.statut==='echec'||(a.statut==='en_cours'&&Date.now()-Date.parse(a.debut||0)>90000))){ btn.classList.remove('hidden'); SEANCE_RELANCE=courante; }
   if(!texte && !entete){
     zone.className='retour-auto attente';
-    zone.textContent = active===false ? "L'analyse automatique n'est pas activée sur le site : tu peux coller ton bilan à Claude (voir « Bilan du jour »)." : (liste.length? "Analyse en attente…" : "Fais un exercice : ton retour apparaîtra ici.");
+    zone.textContent = active===false ? "L'analyse automatique n'est pas activée sur le site : ton enseignant doit la mettre en service." : (liste.length? "Analyse en attente…" : "Fais un exercice : ton retour apparaîtra ici.");
     return;
   }
   zone.className='retour-auto'+(texte?'':' attente');
@@ -588,56 +573,11 @@ function suivreAnalyse(liste){
   SUIVI_TIMER=setTimeout(rafraichirSuivi,4000);
 }
 
-// ---------- Bilan ----------
-const btnBilan=document.getElementById('btnBilan'), btnCopy=document.getElementById('btnCopy'), bilanTxt=document.getElementById('bilanTxt');
-function majBilanBtn(){ btnBilan.disabled = !Object.keys(resultats).length; }
-const f1=x=>x.toFixed(1).replace('.',',');
-function bloc(r){
-  const a=r.audio,t=r.texteAnalyse,c=r.cfg; const L=[];
-  L.push(`${c.titre} — ${Math.round(r.duree)} s réalisées sur ${c.secondes}`);
-  L.push(`Transcription : ${r.texte||'(vide)'}`);
-  if(!a.aParle){ L.push('Mesures : aucune voix détectée.'); return L.join('\n'); }
-  const m=[];
-  m.push(`mots: ${t.nbMots} (différents: ${t.uniques})`);
-  if(c.type==='histoire') m.push(`débit hors pauses: ${Math.round(t.nbMots/(a.tempsActif/60))} mots/min`, `mot imposé « ${c.motImpose} » : ${t.motImposePresent?'utilisé':'absent'}`);
-  else m.push(`rythme: 1 mot toutes les ${f1(r.duree/Math.max(1,t.nbMots))} s`);
-  const blancs=a.pauses.filter(p=>p.duree>=2);
-  m.push(`délai avant de parler: ${f1(a.delaiInitial)} s`);
-  if(c.type==='association') m.push(`blancs ≥2 s: ${a.nbBlancs} (plus longue pause: ${f1(a.plusLongue)} s, total des blancs: ${f1(blancs.reduce((s,p)=>s+p.duree,0))} s)`);
-  else m.push(`pauses ≥0,7 s: ${a.nbPauses} (blancs ≥2 s: ${a.nbBlancs}, plus longue: ${f1(a.plusLongue)} s, total: ${f1(a.totalPauses)} s)`);
-  m.push(`silence final: ${f1(a.silenceFinal)} s`);
-  if(a.hauteur.n) m.push(`variation de hauteur: ${f1(a.hauteur.ecartSt)} demi-tons (étendue 10–90 %: ${f1(a.hauteur.etendueSt)}), médiane ${Math.round(a.hauteur.mediane)} Hz`);
-  m.push(`volume début→fin: ${a.volume.tendanceDb>=0?'+':''}${f1(a.volume.tendanceDb)} dB`);
-  m.push(`mots de remplissage: ${t.remplissage}${Object.keys(t.detailRemplissage).length? ' ('+Object.entries(t.detailRemplissage).map(([k,v])=>k+'×'+v).join(', ')+')':''}`);
-  if(t.repetes.length) m.push(`mots répétés: ${t.repetes.map(x=>x[0]+'×'+x[1]).join(', ')}`);
-  const listeP = c.type==='association' ? blancs : a.pauses;
-  if(listeP.length) m.push(`${c.type==='association'?'blancs':'pauses'} (début s / durée s): ${listeP.slice(0,12).map(p=>f1(p.debut)+'/'+f1(p.duree)).join(' · ')}`);
-  L.push('Mesures : '+m.join(' ; '));
-  const pm=pointsMesures(c.id, r.metriques ? r.metriques.auto : metriques(r).auto);
-  L.push(`Points mesurés (grille v${GRILLE_VERSION}) : ${GRILLE[c.id].criteres.filter(k=>k.type==='mesuré').map(k=>k.nom.toLowerCase()+' '+nf(metriques(r).auto[k.id])+'/'+k.max).join(' · ')} — critères jugés à noter : ${GRILLE[c.id].criteres.filter(k=>k.type==='jugé').map(k=>k.nom.toLowerCase()+' /'+k.max).join(', ')}.`);
-  L.push(`(Seuil de parole ${r.seuil.toFixed(3)}, bruit de fond ${r.plancher.toFixed(3)}. Transcription automatique : ${r.reconnue?'oui':'non, saisie à la main'}.)`);
-  return L.join('\n');
-}
-btnBilan.addEventListener('click', ()=>{
-  const d=new Date().toLocaleDateString('fr-FR');
-  const parts=[`BILAN JOUR ${JOUR}/100 — ${d}`,`Mots du jour : « ${JOURS[JOUR].a} » (association) · « ${JOURS[JOUR].b} » (histoire)`,''];
-  ['ex1','ex2'].forEach(id=>{ if(resultats[id]){ parts.push(bloc(resultats[id]),''); } else parts.push(`(${id==='ex1'?'Exercice 1':'Exercice 2'} non réalisé)`,''); });
-  parts.push("Merci de me faire un retour approfondi du jour : une analyse, 3 axes d'amélioration au maximum, ma note selon la grille du projet (sur 50 par exercice, sur 100 au total), la comparaison avec les jours précédents et une consigne pour demain. Ajoute aussi ma ligne au journal de suivi, et termine par la ligne [NOTES] (points de chaque critère) que l'enseignant recopiera dans RoutineSite.");
-  bilanTxt.value=parts.join('\n'); btnCopy.disabled=false;
-  try{ localStorage.setItem('parole-jour'+JOUR, bilanTxt.value); }catch(_){}
-  sauver();
-});
-btnCopy.addEventListener('click', async ()=>{
-  const msg=document.getElementById('copyMsg');
-  try{ await navigator.clipboard.writeText(bilanTxt.value); msg.textContent='Copié ✓'; }
-  catch(_){ bilanTxt.removeAttribute('readonly'); bilanTxt.select(); try{ document.execCommand('copy'); msg.textContent='Copié ✓'; }catch(e){ msg.textContent='Sélectionne le texte et copie-le à la main.'; } bilanTxt.setAttribute('readonly',''); }
-});
-
 // ---------- Lecture vocale du retour ----------
 document.getElementById('btnLire').addEventListener('click', ()=>{
   const msg=document.getElementById('ttsMsg');
   if(!('speechSynthesis' in window)){ msg.textContent="Lecture vocale indisponible dans ce navigateur."; return; }
-  const texte=(document.getElementById('retourTxt').value.trim()||RETOUR_TEXTE).replace(/[*#_`>]/g,'').trim();
+  const texte=RETOUR_TEXTE.replace(/[*#_`>]/g,'').trim();
   if(!texte){ msg.textContent='Pas encore de retour à lire.'; return; }
   speechSynthesis.cancel();
   const u=new SpeechSynthesisUtterance(texte); u.lang='fr-FR';

@@ -255,7 +255,7 @@ function paroleSectionHtml(seances, erreur) {
   }
   return `<section class="parole-ens" id="parole-ens">
     <h2>Fluidité verbale (POC) : séances et notes</h2>
-    <p class="aide">Chaque séance est enregistrée par la page de l'élève avec ses mesures, puis notée et commentée automatiquement (Cloudflare Workers AI) : les notes automatiques comptent tout de suite pour l'élève, sans action de votre part. Vous pouvez les corriger et les valider (bouton « Valider / corriger »), ou coller un retour approfondi de Claude : sa ligne <code>[NOTES]</code> remplit les champs. Vos corrections sont mémorisées pour suivre la fiabilité de l'analyse.</p>
+    <p class="aide">Chaque séance est enregistrée par la page de l'élève avec ses mesures, puis notée et commentée automatiquement (Cloudflare Workers AI) : les notes automatiques comptent tout de suite pour l'élève, sans action de votre part. Vous pouvez les corriger et les valider (bouton « Valider / corriger »),  Vos corrections sont mémorisées pour suivre la fiabilité de l'analyse.</p>
     ${resumeParole(seances)}
     ${grilleHtml()}
     ${erreur ? "" : archiveHtml()}
@@ -317,11 +317,10 @@ function seanceHtml(s) {
   return `<div class="seance-p" id="seance-${esc(s.cle.replace(/:/g, "_"))}" data-cle="${esc(s.cle)}">
     <h3>${esc(s.code)} · ${esc(nomClasse(s.classe))} · jour ${esc(s.jour)}<small>${esc(dateFr(s.date))} · ${etat}</small></h3>
     ${audiosHtml(s)}
-    ${s.bilan ? `<details><summary class="small">Bilan envoyé (à coller à Claude)</summary><pre>${esc(s.bilan)}</pre><button class="btn btn--secondaire" type="button" onclick="copierBilan('${esc(s.cle)}')">Copier le bilan</button></details>` : ""}
     ${analyseHtml(s)}
     ${exos}
-    <label class="small" for="retour-${esc(s.cle.replace(/:/g, "_"))}">Retour montré à l'élève (automatique, modifiable ; ou collez un retour de Claude : sa ligne [NOTES] remplit les champs ci-dessus)</label>
-    <textarea id="retour-${esc(s.cle.replace(/:/g, "_"))}" data-retour oninput="lireRetour('${esc(s.cle)}')">${esc(s.retour || (s.analyse && s.analyse.retour) || "")}</textarea>
+    <label class="small" for="retour-${esc(s.cle.replace(/:/g, "_"))}">Retour montré à l'élève (automatique ; vous pouvez le modifier)</label>
+    <textarea id="retour-${esc(s.cle.replace(/:/g, "_"))}" data-retour>${esc(s.retour || (s.analyse && s.analyse.retour) || "")}</textarea>
     <div class="barre"><button class="btn" type="button" onclick="enregistrerNotes('${esc(s.cle)}')">Valider / corriger les notes</button>
       <button class="lien" type="button" onclick="reinitParole('${esc(s.cle.split(":")[1])}','${esc(s.code)}',${Number(s.jour)})">Remettre ce jour à zéro…</button>
       <button class="lien" type="button" onclick="supprimerSeance('${esc(s.cle)}')">Supprimer cette séance seulement</button>
@@ -442,13 +441,6 @@ function majTotaux(cle) {
     p.textContent = t != null ? `Total : ${nf(t)} / ${GRILLE[ex].total}` : "Total : en attente des critères jugés";
   });
 }
-function lireRetour(cle) {
-  const b = blocSeance(cle), n = lireLigneNotes(b.querySelector("[data-retour]").value);
-  if (!n) return;
-  ["ex1", "ex2"].forEach(ex => Object.entries(n[ex]).forEach(([c, v]) => { const i = b.querySelector(`input[data-ex="${ex}"][data-c="${c}"]`); if (i) i.value = v; }));
-  majTotaux(cle);
-  b.querySelector("[data-msg]").textContent = "Notes lues dans la ligne [NOTES] : vérifiez puis enregistrez.";
-}
 async function enregistrerNotes(cle) {
   const b = blocSeance(cle), msg = b.querySelector("[data-msg]");
   try {
@@ -475,10 +467,6 @@ async function supprimerSeance(cle) {
   try { await appelerSuivi("/admin/parole/supprimer", { motdepasse: lireMdp(), cle }); }
   catch (e) { alert("Échec : " + e.message); return; }
   await afficher();
-}
-async function copierBilan(cle) {
-  const s = SEANCES[cle]; if (!s) return;
-  try { await navigator.clipboard.writeText(s.bilan); alert("Bilan copié."); } catch (e) { alert("Copie impossible : sélectionnez le texte à la main."); }
 }
 function ouvrirParole() { const s = document.getElementById("parole-ens"); if (s) s.scrollIntoView({ behavior: "smooth", block: "start" }); }
 function initTotaux() { Object.keys(SEANCES).forEach(majTotaux); }

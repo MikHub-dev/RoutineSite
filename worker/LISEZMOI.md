@@ -41,7 +41,7 @@ La dernière commande affiche l'adresse du Worker, de la forme
 | `POST /etat` | l'élève | renvoie ses jours faits (pour synchroniser ses appareils) |
 | `POST /admin/etat` | l'enseignant | liste les élèves et leurs jours faits |
 | `POST /admin/reinitialiser` | l'enseignant | remet un jour (ou tous) à « non fait » |
-| `POST /parole/enregistrer` | l'élève | enregistre ou met à jour une séance de « Fluidité verbale » (mesures, texte, bilan) |
+| `POST /parole/enregistrer` | l'élève | enregistre ou met à jour une séance de « Fluidité verbale » (mesures, texte) |
 | `POST /parole/etat` | l'élève | renvoie ses séances avec leurs notes (page « Mon suivi ») |
 | `POST /admin/parole` | l'enseignant | liste toutes les séances de tous les élèves |
 | `POST /admin/parole/noter` | l'enseignant | enregistre les notes (par critère) et le retour de Claude |
@@ -85,13 +85,13 @@ cd worker
 npx wrangler deploy
 ```
 
-Tant que le Worker n'est pas republié (ou si la liaison est retirée), rien ne change : les séances sont enregistrées, les points mesurés s'affichent, et on peut toujours coller le bilan à Claude.
+Tant que le Worker n'est pas republié (ou si la liaison est retirée), rien ne change : les séances sont enregistrées, les points mesurés s'affichent.
 
 **Coût** : Workers AI est gratuit jusqu'à 10 000 « neurons » par jour. Une séance consomme environ 110 neurons (≈ 2 500 tokens lus et 600 écrits avec Mistral Small 3.1, tarifs Cloudflare à vérifier sur la page de tarifs), soit environ 1 % de la franchise. Au-delà, le tarif Workers Paid est de 0,011 $ pour 1 000 neurons. Plafonds du Worker : 8 analyses automatiques par séance et 30 par élève et par jour. Pour changer de modèle, définir `AI_MODEL` (jugement) ou `AI_EMBED_MODEL` (liens) dans `[vars]`.
 
 **Confidentialité** : seul le texte de la transcription et les mesures sont envoyés au modèle, jamais l'audio.
 
-**Notes de l'élève et de l'enseignant** : les notes automatiques comptent immédiatement (marquées « auto » sur la page de l'élève). Dans l'espace enseignant, « Valider / corriger les notes » enregistre les notes retenues ; chaque écart avec la note automatique est mémorisé (`corrections`) pour suivre la fiabilité de l'analyse. Un retour approfondi de Claude (avec sa ligne `[NOTES]`) peut toujours être collé à la place.
+**Notes de l'élève et de l'enseignant** : les notes automatiques comptent immédiatement (marquées « auto » sur la page de l'élève). Dans l'espace enseignant, « Valider / corriger les notes » enregistre les notes retenues ; chaque écart avec la note automatique est mémorisé (`corrections`) pour suivre la fiabilité de l'analyse.
 
 **Calibration** : les seuils de l'indice de proximité (`SEUIL_SAUT`, `SIM_BASSE`, `SIM_HAUTE` dans `src/analyse.js`) sont provisoires. Après quelques séances, comparer dans l'espace enseignant (section « Analyse automatique ») l'indice et les notes corrigées, puis ajuster.
 

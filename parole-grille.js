@@ -114,20 +114,3 @@ function courbeSvg(points) {
   const etiq = points.map((p, i) => (points.length <= 12 || i % Math.ceil(points.length / 12) === 0) ? `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="var(--doux)">${esc(p.court)}</text>` : "").join("");
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px" role="img" aria-label="Évolution de la note sur 100">${lignes}<path d="${chemin}" fill="none" stroke="var(--bleu)" stroke-width="2"/>${pts}${etiq}</svg>`;
 }
-
-// Lecture d'une ligne « [NOTES] ex1: rythme=9 continuite=6 … ; ex2: … » dans un retour de Claude.
-function lireLigneNotes(texte) {
-  const ligne = String(texte || "").split(/\r?\n/).find(l => /\[NOTES\]/i.test(l));
-  if (!ligne) return null;
-  const notes = { ex1: {}, ex2: {} };
-  let trouve = 0;
-  ["ex1", "ex2"].forEach(ex => {
-    const m = ligne.match(new RegExp(ex + "\\s*:\\s*([^;|]*)", "i"));
-    if (!m) return;
-    GRILLE[ex].criteres.forEach(c => {
-      const v = m[1].match(new RegExp("\\b" + c.id + "\\s*=\\s*([0-9]+(?:[.,][0-9]+)?)", "i"));
-      if (v) { notes[ex][c.id] = Math.min(c.max, parseFloat(v[1].replace(",", "."))); trouve++; }
-    });
-  });
-  return trouve ? notes : null;
-}
