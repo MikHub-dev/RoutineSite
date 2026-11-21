@@ -95,7 +95,7 @@ function grilleHtml() {
     <table class="notes-tab grille-tab"><thead><tr><th>Critère</th><th>Pts</th><th>Type</th><th>Barème</th></tr></thead><tbody>${
       GRILLE[ex].criteres.map(c => `<tr><td>${esc(c.nom)}</td><td>${c.max}</td><td>${esc(c.type)}</td><td class="small">${esc(c.regle)}</td></tr>`).join("")
     }</tbody></table>`;
-  return `<details class="grille-details"><summary>Grille de notation (version ${GRILLE_VERSION})</summary>
+  return `<details class="grille-details"><summary>Grille de notation</summary>
     <p class="small">Chaque exercice est noté sur 50, le total sur 100. 75 points sont mesurés par la page (pauses, rythme, voix…) ; 25 sont jugés à la lecture de la transcription (pertinence des liens, structure de l'histoire) par l'analyse automatique du site, que ton enseignant peut corriger.</p>
     ${tab("ex1")}${tab("ex2")}
     <p class="small">Niveaux : ${NIVEAUX.map((n, i) => `${n[0]}${i < NIVEAUX.length - 1 ? "–" + (NIVEAUX[i + 1][0] - 1) : "–100"} ${n[1]}`).join(" · ")}.</p>

@@ -94,7 +94,7 @@
 <script>
 const CLE_ADMIN = "routinesite:admin";
 const NOMS = { probabilites: "Probabilités en 100 jours", technologie: "Technologie numérique en 100 jours" };
-const NOMS_ALL = { ...NOMS, parole: "Fluidité verbale en 100 jours (POC)" };
+const NOMS_ALL = { ...NOMS, parole: "Fluidité verbale en 100 jours" };
 const FICHIERS = { probabilites: "data/probabilites.json", technologie: "data/technologie.json" };
 
 const lireMdp = () => { try { return sessionStorage.getItem(CLE_ADMIN) || ""; } catch (e) { return ""; } };
@@ -241,7 +241,7 @@ async function remettre(empreinte, code, routine, jour) {
   document.getElementById("message").textContent = `✓ ${code} : ${quoi} remis à « non fait ».`;
 }
 
-// ---------- Fluidité verbale (POC) : séances, notes, grille ----------
+// ---------- Fluidité verbale : séances, notes, grille ----------
 let SEANCES = {};
 const TITRES_EX = { ex1: GRILLE.ex1.titre, ex2: GRILLE.ex2.titre };
 
@@ -254,7 +254,7 @@ function paroleSectionHtml(seances, erreur) {
     corps = seances.slice().reverse().map(seanceHtml).join("");
   }
   return `<section class="parole-ens" id="parole-ens">
-    <h2>Fluidité verbale (POC) : séances et notes</h2>
+    <h2>Fluidité verbale : séances et notes</h2>
     <p class="aide">Chaque séance est enregistrée par la page de l'élève avec ses mesures, puis notée et commentée automatiquement (Cloudflare Workers AI) : les notes automatiques comptent tout de suite pour l'élève, sans action de votre part. Vous pouvez les corriger et les valider (bouton « Valider / corriger »),  Vos corrections sont mémorisées pour suivre la fiabilité de l'analyse.</p>
     ${resumeParole(seances)}
     ${grilleHtml()}

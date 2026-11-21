@@ -119,7 +119,8 @@
 <main class="page parole" id="contenu" hidden>
 
   <h1>Fluidité verbale — Jour <span id="jourN">1</span> sur 100</h1>
-  <p class="sub">Routine de test (POC) · deux exercices de parole, mesurés dans ton navigateur. Chaque séance (mesures et transcription) est enregistrée sur le site, notée et commentée automatiquement quelques secondes après chaque exercice.</p>
+  <p class="sub" id="navJour" style="float:right;margin:0"></p>
+  <p class="sub">Deux exercices de parole, mesurés dans ton navigateur. Chaque séance (mesures et transcription) est enregistrée sur le site, notée et commentée automatiquement quelques secondes après chaque exercice.</p>
 
   <div id="compat" class="banner hidden"></div>
 
@@ -145,15 +146,16 @@
   </div>
   <section class="card retour-col" id="retour">
     <h2>Retour du jour</h2>
-    <p class="consigne">Généré automatiquement après chaque exercice. Tu peux l'écouter lu à voix haute (voix de synthèse de ton navigateur).</p>
+    <p class="consigne">Généré automatiquement après chaque exercice.</p>
     <div id="noteJour" class="note-jour hidden"></div>
     <div id="retourAuto" class="retour-auto attente">Fais un exercice : ton retour apparaîtra ici.</div>
-    <div class="row" style="margin-top:8px"><button id="btnLire" class="primary">▶ Lire à voix haute</button><button id="btnStopLire">■ Stop</button><button id="btnRelance" class="hidden">Relancer l'analyse</button><span id="ttsMsg" class="small"></span></div>
+    <div class="row" style="margin-top:8px"><button id="btnRelance" class="hidden">Relancer l'analyse</button><span id="ttsMsg" class="small"></span></div>
   </section></div>
 </main>
 
 <script src="commun.js"></script>
 <script src="parole-grille.js"></script>
+<script src="parole-mots.js"></script>
 <script>
 
 // ==== PURE START (fonctions testées hors navigateur)
@@ -248,11 +250,20 @@ function analyserTexte(texte, motImpose){
 }
 // ==== PURE END
 
-// ---------- Configuration du jour (POC : un seul jour) ----------
-const JOURS = { 1: { a:'lanterne', b:'horloge' } };
-const JOUR = 1;
+// ---------- Configuration du jour ----------
+// Jour demandé (?j=N) ; sinon le premier jour pas encore terminé (100 au maximum).
+const JOURS = {}; MOTS_PAROLE.forEach((m,i)=>{ JOURS[i+1]={a:m[0],b:m[1]}; });
+const JOUR = (()=>{
+  const q=parseInt(new URLSearchParams(location.search).get('j'),10);
+  if(q>=1 && q<=100) return q;
+  const se=lireSession(); const faits=se?lireJours('parole', se.code):[];
+  for(let n=1;n<=100;n++) if(!faits.includes(n)) return n;
+  return 100;
+})();
 
 document.getElementById('jourN').textContent = JOUR;
+document.getElementById('navJour').innerHTML =
+  (JOUR>1?`<a href="?j=${JOUR-1}">← jour ${JOUR-1}</a>`:'')+(JOUR>1&&JOUR<100?' · ':'')+(JOUR<100?`<a href="?j=${JOUR+1}">jour ${JOUR+1} →</a>`:'');
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const compat = document.getElementById('compat');
@@ -611,17 +622,6 @@ function suivreAnalyse(liste){
 }
 
 // ---------- Lecture vocale du retour ----------
-document.getElementById('btnLire').addEventListener('click', ()=>{
-  const msg=document.getElementById('ttsMsg');
-  if(!('speechSynthesis' in window)){ msg.textContent="Lecture vocale indisponible dans ce navigateur."; return; }
-  const texte=RETOUR_TEXTE.replace(/[*#_`>]/g,'').trim();
-  if(!texte){ msg.textContent='Pas encore de retour à lire.'; return; }
-  speechSynthesis.cancel();
-  const u=new SpeechSynthesisUtterance(texte); u.lang='fr-FR';
-  const v=speechSynthesis.getVoices().find(x=>x.lang&&x.lang.toLowerCase().startsWith('fr')); if(v) u.voice=v;
-  u.onend=()=>{msg.textContent='';}; msg.textContent='Lecture…'; speechSynthesis.speak(u);
-});
-document.getElementById('btnStopLire').addEventListener('click', ()=>{ try{ speechSynthesis.cancel(); }catch(_){} document.getElementById('ttsMsg').textContent=''; });
 
 // ---------- Accès : même code élève que le reste du site ----------
 sessionValide().then(s => {
