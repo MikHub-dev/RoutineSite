@@ -129,6 +129,7 @@
   <div class="card" id="intro">
     <h2>Information</h2>
     <p class="small">Information : ton enregistrement audio est envoyé dans une archive privée, accessible à ton enseignant seulement, pour pouvoir être réanalysé en cas de problème.</p>
+    <p class="small">Réessayer : tu peux recommencer chaque exercice autant de fois que tu veux avec « Recommencer ». Chaque essai est conservé séparément, avec ses mesures, sa note et son retour.</p>
     <p class="small">Conseil : place-toi dans une pièce calme, parle à 20–30 cm du micro. Pendant les 3 secondes avant chaque exercice, reste silencieux : cela permet de mesurer le bruit de fond.</p>
   </div>
 
@@ -299,7 +300,7 @@ function creerExercice(cfg){
       <div class="legend"><span><i style="background:var(--voice)"></i>voix</span><span><i style="background:var(--silence)"></i>silence</span><span><i style="background:var(--pause)"></i>pause ≥ 0,7 s</span></div>
       <label class="small" for="${cfg.id}-txt">Transcription (corrige-la si la reconnaissance s'est trompée) :</label>
       <textarea id="${cfg.id}-txt" rows="2" data-el="txt"></textarea>
-      <div class="row" style="margin-top:6px"><button data-act="recalc">Recalculer avec mon texte</button><button data-act="redo">↻ Recommencer</button></div>
+      <div class="row" style="margin-top:6px"><button data-act="recalc">Recalculer avec mon texte</button><button data-act="redo">↻ Recommencer (nouvel essai)</button></div>
       <div data-el="replay"></div>
       <p class="save" data-el="archive"></p>
       <details><summary>Détails techniques</summary><pre class="small" data-el="debug" style="white-space:pre-wrap"></pre></details>
@@ -310,8 +311,8 @@ function creerExercice(cfg){
 
   btnStart.addEventListener('click', demarrer);
   btnStop.addEventListener('click', ()=>{ if(session) session.arreterTot=true; });
-  root.querySelector('[data-act="redo"]').addEventListener('click', ()=>{ delete resultats[cfg.id]; $('result').classList.add('hidden'); $('status').textContent='Prêt.'; $('timer').textContent=fmt(cfg.secondes); $('progress').style.width='0'; });
-  root.querySelector('[data-act="recalc"]').addEventListener('click', ()=>{ const r=resultats[cfg.id]; if(!r) return; r.texte=$('txt').value.trim(); r.texteAnalyse=analyserTexte(r.texte, cfg.motImpose); afficher(r); sauver(); });
+  root.querySelector('[data-act="redo"]').addEventListener('click', ()=>{ delete resultats[cfg.id]; SEANCE=String(Math.max(Date.now(), Number(SEANCE)+1)); $('result').classList.add('hidden'); $('status').textContent='Prêt.'; $('timer').textContent=fmt(cfg.secondes); $('progress').style.width='0'; });
+  root.querySelector('[data-act="recalc"]').addEventListener('click', ()=>{ const r=resultats[cfg.id]; if(!r) return; r.texte=$('txt').value.trim(); r.texteAnalyse=analyserTexte(r.texte, cfg.motImpose); afficher(r); sauver(r.seance); });
 
   async function demarrer(){
     btnStart.disabled=true; btnStop.disabled=true;
@@ -370,7 +371,7 @@ function creerExercice(cfg){
 
     const audio = analyserAudio(frames, duree, seuil);
     const blob = chunks.length ? new Blob(chunks,{type:(rec&&rec.mimeType)||'audio/webm'}) : null;
-    const res={cfg, duree, seuil, plancher, frames, audio, texte:texte.trim(), blob, blobUrl: blob? URL.createObjectURL(blob):null, reconnue: !!SR};
+    const res={seance:SEANCE, cfg, duree, seuil, plancher, frames, audio, texte:texte.trim(), blob, blobUrl: blob? URL.createObjectURL(blob):null, reconnue: !!SR};
     res.texteAnalyse=analyserTexte(res.texte, cfg.motImpose);
     resultats[cfg.id]=res;
     live.classList.add('hidden'); afficher(res); btnStart.disabled=false; sauver().then(()=>archiverAudio(cfg.id, res));
@@ -454,7 +455,7 @@ creerExercice({ id:'ex2', motLabel:"Mot 2 · sujet de l'histoire", mot:JOURS[JOU
 
 // ---------- Métriques stockées, sauvegarde et suivi ----------
 let SESSION = null;
-const SEANCE = String(Date.now());          // une séance = une ouverture de la page
+let SEANCE = String(Date.now());            // une séance = un essai : « Recommencer » ouvre une nouvelle séance
 const cleHist = () => 'routinesite:parole:hist:' + SESSION.code;
 const lire = cle => { try{ return JSON.parse(localStorage.getItem(cle)) || null; }catch(_){ return null; } };
 const ecrire = (cle, v) => { try{ localStorage.setItem(cle, JSON.stringify(v)); }catch(_){} };
@@ -470,7 +471,8 @@ function metriques(r){
   m.auto=noterAuto(c.id, m);
   return m;
 }
-function instantane(){ return { jour:JOUR, seance:SEANCE, ex1:metriques(resultats.ex1), ex2:metriques(resultats.ex2) }; }
+function instantane(sid){ sid=sid||SEANCE; const de=id=>{ const r=resultats[id]; return r&&r.seance===sid? metriques(r):null; };
+  return { jour:JOUR, seance:sid, ex1:de('ex1'), ex2:de('ex2') }; }
 
 function afficherSauvegarde(ok, msg){ const z=document.getElementById('sauvegarde'); z.textContent=msg; z.className='save '+(ok?'ok':'ko'); }
 
@@ -478,20 +480,20 @@ async function envoyer(entree){
   await appelerSuivi('/parole/enregistrer', { classe:SESSION.classe, code:SESSION.code, jour:entree.jour, seance:entree.seance, ex1:entree.ex1, ex2:entree.ex2 });
 }
 // Enregistre la séance en cours : copie sur l'appareil (secours) puis envoi au site.
-async function sauver(){
+async function sauver(sid){ sid=sid||SEANCE;
   if(!SESSION) return;
-  const p=instantane();
+  const p=instantane(sid);
   const hist=lire(cleHist())||{};
-  hist[SEANCE]={...p, date:(hist[SEANCE]&&hist[SEANCE].date)||new Date().toISOString(), envoye:false};
+  hist[sid]={...p, date:(hist[sid]&&hist[sid].date)||new Date().toISOString(), envoye:false};
   const ids=Object.keys(hist).sort(); while(ids.length>40) delete hist[ids.shift()];
   ecrire(cleHist(), hist);
   try{
     await envoyer(p);
-    hist[SEANCE].envoye=true; ecrire(cleHist(), hist);
+    hist[sid].envoye=true; ecrire(cleHist(), hist);
     afficherSauvegarde(true, '✓ Séance enregistrée sur le site à '+new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})+'.');
     if(resultats.ex1 && resultats.ex2) await enregistrerJour(SESSION,'parole',JOUR);
   }catch(e){
-    if(e.statut===400||e.statut===403) hist[SEANCE].envoye='refuse';
+    if(e.statut===400||e.statut===403) hist[sid].envoye='refuse';
     ecrire(cleHist(), hist);
     afficherSauvegarde(false, '⚠ Séance gardée sur cet appareil mais pas encore envoyée au site ('+e.message+'). Elle sera renvoyée à la prochaine ouverture de cette page.');
   }
@@ -505,7 +507,7 @@ async function archiverAudio(ex, res){
   etatArchive(ex,true,"Archivage de l'enregistrement audio…");
   try{
     const b64 = await new Promise((ok,ko)=>{ const fr=new FileReader(); fr.onload=()=>ok(String(fr.result).split(',')[1]); fr.onerror=()=>ko(new Error('lecture audio')); fr.readAsDataURL(res.blob); });
-    await appelerSuivi('/parole/audio', { classe:SESSION.classe, code:SESSION.code, jour:JOUR, seance:SEANCE, exo:ex, mime:res.blob.type||'audio/webm', duree:res.duree, audio:b64 }, 60000);
+    await appelerSuivi('/parole/audio', { classe:SESSION.classe, code:SESSION.code, jour:JOUR, seance:(res.seance||SEANCE), exo:ex, mime:res.blob.type||'audio/webm', duree:res.duree, audio:b64 }, 60000);
     etatArchive(ex,true,"✓ Enregistrement audio archivé (dépôt privé).");
   }catch(e){
     etatArchive(ex,false,"⚠ Audio non archivé : "+e.message+". L'analyse reste enregistrée ; tu peux réécouter ta prise de parole ci-dessus.");
@@ -586,7 +588,7 @@ function afficherRetour(liste, active){
   if(nn){
     const tag=nn.auto?' <span class="tag-auto">auto</span>':'';
     nz.innerHTML= nn.complet ? `Note de la séance : <b>${nf(nn.somme,0)}/100</b> · ${esc(niveauNote(nn.somme))}${tag}`
-      : `Note provisoire : <b>${nf(nn.somme,0)}/${nn.max}</b>${tag}<br><span class="small">Le total sur 100 apparaît quand les deux exercices sont faits.</span>`;
+      : `Note provisoire : <b>${nf(nn.somme,0)}/${nn.max}</b>${tag}<br><span class="small">Le total sur 100 d'une séance apparaît quand ses deux exercices sont faits (chaque essai est une séance à part).</span>`;
     nz.classList.remove('hidden');
   } else nz.classList.add('hidden');
   const texte=cible? (cible.retour||cible.analyse.retour) : '';

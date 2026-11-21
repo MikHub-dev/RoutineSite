@@ -80,6 +80,8 @@ function mathematiques(racine) {
 }
 
 function cleBrouillon(i) { return `routinesite:brouillon:${cleRoutine}:${numero}:${normaliser(session.code)}:${i}`; }
+function cleEssais() { return `routinesite:essais:${cleRoutine}:${numero}:${normaliser(session.code)}`; }
+function nbEssais() { try { return parseInt(localStorage.getItem(cleEssais()), 10) || 0; } catch (e) { return 0; } }
 function lireBrouillon(i) { try { return localStorage.getItem(cleBrouillon(i)) || ""; } catch (e) { return ""; } }
 function ecrireBrouillon(i, v) { try { localStorage.setItem(cleBrouillon(i), v); } catch (e) {} }
 
@@ -109,8 +111,10 @@ function afficherJour() {
         </div>`).join("")}
       <div class="envoi" style="margin-top:20px">
         <button type="button" class="btn" id="envoyer">Envoyer mes réponses par e-mail</button>
+        <button type="button" class="btn btn--secondaire" id="recommencer" hidden>↻ Recommencer (nouvel essai)</button>
         <span class="info" id="etat"></span>
       </div>
+      <p class="info" id="essais">Tu peux refaire cette séance autant de fois que tu veux : chaque envoi est un essai conservé séparément par ton enseignant, avec ses réponses.</p>
       <p class="erreur" id="erreur" role="alert"></p>
       <div id="secours" hidden>
         <p class="info">Rien ne s'est ouvert ? Utilise l'un de ces moyens, puis écris à l'adresse indiquée.</p>
@@ -129,11 +133,24 @@ function afficherJour() {
     t.addEventListener("input", () => ecrireBrouillon(i, t.value));
   });
   document.getElementById("envoyer").addEventListener("click", envoyer);
+  document.getElementById("recommencer").addEventListener("click", () => {
+    jour.exercices.forEach((_, i) => { document.getElementById(`rep-${i}`).value = ""; ecrireBrouillon(i, ""); });
+    document.getElementById("etat").textContent = "Nouvel essai : écris de nouvelles réponses puis envoie-les.";
+    document.getElementById("secours").hidden = true;
+    document.getElementById("rep-0").focus();
+  });
+  majEssais();
   if (fait) {
     document.getElementById("etat").textContent = "✓ Jour terminé : tes réponses ont été envoyées. Tu peux relire les corrigés.";
     revelerCorriges();
   }
   mathematiques(c);
+}
+
+function majEssais() {
+  const n = nbEssais();
+  document.getElementById("recommencer").hidden = n === 0;
+  if (n) document.getElementById("essais").textContent = `${n} essai${n > 1 ? "s" : ""} envoyé${n > 1 ? "s" : ""} sur cet appareil. Tu peux refaire cette séance autant de fois que tu veux : chaque envoi est un essai conservé séparément par ton enseignant, avec ses réponses.`;
 }
 
 function revelerCorriges() {
@@ -148,8 +165,8 @@ function composerMessage() {
   const reponses = jour.exercices.map((e, i) =>
     `Exercice ${i + 1} (${e.titre}) :\n${document.getElementById(`rep-${i}`).value.trim()}`).join("\n\n");
   return {
-    sujet: `RoutineSite · ${R.court} · Jour ${numero} · ${normaliser(session.code)}`,
-    corps: `Code : ${normaliser(session.code)} (${nomClasse(session.classe)})\nRoutine : ${R.nom}\nJour ${numero} : ${jour.titreTxt || jour.titre}\nEnvoyé le : ${date}\n\n${reponses}\n`
+    sujet: `RoutineSite · ${R.court} · Jour ${numero} · ${normaliser(session.code)} · essai ${nbEssais() + 1}`,
+    corps: `Code : ${normaliser(session.code)} (${nomClasse(session.classe)})\nRoutine : ${R.nom}\nJour ${numero} : ${jour.titreTxt || jour.titre}\nEssai n° ${nbEssais() + 1}\nEnvoyé le : ${date}\n\n${reponses}\n`
   };
 }
 
@@ -172,7 +189,9 @@ function envoyer() {
   document.getElementById("secours").hidden = false;
   // Ouvre le logiciel de messagerie de l'élève avec le message prêt à envoyer.
   location.href = `mailto:${ADRESSE_ENSEIGNANT}?subject=${sujet}&body=${corps}`;
+  try { localStorage.setItem(cleEssais(), String(nbEssais() + 1)); } catch (e) {}
   enregistrerJour(session, cleRoutine, numero);
+  majEssais();
   document.getElementById("etat").textContent = "✓ Jour validé sur cet appareil. Envoie le message qui vient de s'ouvrir : les corrigés sont affichés ci-dessous.";
   revelerCorriges();
 }
