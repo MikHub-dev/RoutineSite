@@ -43,7 +43,8 @@
 <script>
 const ROUTINES = {
   probabilites: { nom: "Probabilités en 100 jours", fichier: "data/probabilites.json" },
-  technologie: { nom: "Technologie numérique en 100 jours", fichier: "data/technologie.json" }
+  technologie: { nom: "Technologie numérique en 100 jours", fichier: "data/technologie.json" },
+  parole: { nom: "Fluidité verbale en 100 jours", fichier: null }
 };
 
 (async function () {
@@ -53,7 +54,17 @@ const ROUTINES = {
   const cle = ROUTINES[new URLSearchParams(location.search).get("r")] ? new URLSearchParams(location.search).get("r") : null;
   if (!cle) { c.innerHTML = `<p class="erreur">Routine inconnue. <a class="lien" href="index.html">Retour</a></p>`; return; }
   let donnees;
-  try { donnees = await (await fetch(ROUTINES[cle].fichier)).json(); }
+  const parole = cle === "parole";
+  const pageJour = n => parole ? `parole.html?j=${n}` : `jour.html?r=${cle}&j=${n}`;
+  try {
+    if (parole) {
+      donnees = { modules: [], jours: [] };
+      for (let m = 1; m <= 10; m++) {
+        donnees.modules.push({ id: m, titre: `Jours ${(m - 1) * 10 + 1} à ${m * 10}`, niveau: "Association de mots + discours improvisé" });
+        for (let n = (m - 1) * 10 + 1; n <= m * 10; n++) donnees.jours.push({ n, module: m, titre: "Séance de parole" });
+      }
+    } else donnees = await (await fetch(ROUTINES[cle].fichier)).json();
+  }
   catch (e) { c.innerHTML = `<p class="erreur">Impossible de charger les séances. <a class="lien" href="index.html">Retour</a></p>`; return; }
 
   await synchroniserJours(session);
@@ -67,7 +78,7 @@ const ROUTINES = {
     return `<section class="module">
       <h2>${esc(m.titre)}<small>${esc(m.niveau)} · ${nb}/${jours.length}</small></h2>
       <div class="grille">${jours.map(j => `<a class="case${faits.includes(j.n) ? " fait" : ""}${j.n % 10 === 0 ? " bilan" : ""}${j.n === prochain ? " prochain" : ""}"
-        href="jour.html?r=${cle}&j=${j.n}" title="${esc("Jour " + j.n + " · " + (j.titreTxt || j.titre))}">${j.n}</a>`).join("")}</div>
+        href="${pageJour(j.n)}" title="${esc("Jour " + j.n + " · " + (j.titreTxt || j.titre))}">${j.n}</a>`).join("")}</div>
     </section>`;
   }).join("");
 
@@ -76,7 +87,7 @@ const ROUTINES = {
     <p class="fil" style="color:var(--doux);font-size:14px"><a class="lien" href="index.html">← Mon espace</a> · ${esc(nomClasse(session.classe))}</p>
     <h1 class="titre">${esc(ROUTINES[cle].nom)}</h1>
     <p class="sous-titre">Cliquez sur un jour pour ouvrir la séance. En vert : jours terminés. Contour pointillé : séance de bilan.</p>
-    <div class="barre"><a class="btn" href="jour.html?r=${cle}&j=${prochain}">Faire le jour ${prochain}</a>
+    <div class="barre"><a class="btn" href="${pageJour(prochain)}">Faire le jour ${prochain}</a>
       <span class="sous-titre" style="margin:0">${faits.length}/100 jours terminés</span></div>
     ${modules}`;
 })();
