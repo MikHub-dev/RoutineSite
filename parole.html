@@ -78,6 +78,7 @@
   .card{padding:10px 12px;margin:0;border-radius:10px}
   .card h2{font-size:1rem;margin:0 0 .25em}
   .consigne{font-size:.88rem;margin:0 0 6px}
+  .word{margin:0 0 6px}
   .words{margin:4px 0 6px;gap:8px}.word{padding:4px 10px}.word strong{font-size:1.25rem}
   .intro-ligne{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
   .intro-ligne h2{margin:0}
@@ -125,11 +126,7 @@
   <div class="cols"><div class="col-main">
 
   <div class="card" id="intro">
-    <div class="intro-ligne"><h2>Les mots du jour</h2>
-    <div class="words">
-      <div class="word"><small>Mot 1 · point de départ de l'association</small><strong id="wordA">…</strong></div>
-      <div class="word"><small>Mot 2 · sujet de l'histoire</small><strong id="wordB">…</strong></div>
-    </div></div>
+    <h2>Information</h2>
     <p class="small">Information : ton enregistrement audio est envoyé dans une archive privée, accessible à ton enseignant seulement, pour pouvoir être réanalysé en cas de problème.</p>
     <p class="small">Conseil : place-toi dans une pièce calme, parle à 20–30 cm du micro. Pendant les 3 secondes avant chaque exercice, reste silencieux : cela permet de mesurer le bruit de fond.</p>
   </div>
@@ -255,8 +252,6 @@ function analyserTexte(texte, motImpose){
 const JOURS = { 1: { a:'lanterne', b:'horloge' } };
 const JOUR = 1;
 
-document.getElementById('wordA').textContent = JOURS[JOUR].a;
-document.getElementById('wordB').textContent = JOURS[JOUR].b;
 document.getElementById('jourN').textContent = JOUR;
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -275,6 +270,7 @@ function creerExercice(cfg){
   const root=document.getElementById(cfg.id);
   root.innerHTML = `
     <h2>${cfg.titre}</h2>
+    <div class="word"><small>${cfg.motLabel}</small><strong>${cfg.mot}</strong></div>
     <p class="consigne">${cfg.consigne}</p>
     <div class="row">
       <button class="primary" data-act="start">▶ Démarrer</button>
@@ -438,11 +434,11 @@ function dessiner(canvas, r){
 function fmt(s){ s=Math.max(0,Math.ceil(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
 function attendre(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
-creerExercice({ id:'ex1', type:'association', secondes:60, titre:"Exercice 1 — Association de mots (60 s)",
+creerExercice({ id:'ex1', motLabel:"Mot 1 · point de départ de l'association", mot:JOURS[JOUR].a, type:'association', secondes:60, titre:"Exercice 1 — Association de mots (60 s)",
   consigne:`Pars du mot <strong>« ${JOURS[JOUR].a} »</strong> et associe-lui immédiatement un autre mot logique, puis enchaîne sans t'arrêter.`,
   rappel:'un mot, puis le suivant, sans t\'arrêter', motImpose:null });
-creerExercice({ id:'ex2', type:'histoire', secondes:120, titre:"Exercice 2 — Discours improvisé (2 min)",
-  consigne:`Raconte une histoire (ou parle) sur le sujet <strong>« ${JOURS[JOUR].b} »</strong>, à voix haute, pendant 2 minutes <strong>sans t'arrêter</strong>. Si tu bloques, répète ta dernière idée ou change d'angle, mais continue de parler.`,
+creerExercice({ id:'ex2', motLabel:"Mot 2 · sujet de l'histoire", mot:JOURS[JOUR].b, type:'histoire', secondes:120, titre:"Exercice 2 — Discours improvisé (2 min)",
+  consigne:`Raconte une histoire sur le sujet <strong>« ${JOURS[JOUR].b} »</strong> pendant 2 minutes <strong>sans t'arrêter</strong>. Si tu bloques, répète ta dernière idée ou change d'angle, mais continue de parler.`,
   rappel:'continue de parler, même si tu hésites', motImpose:JOURS[JOUR].b });
 
 // ---------- Métriques stockées, sauvegarde et suivi ----------
