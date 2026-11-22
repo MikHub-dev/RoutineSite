@@ -97,12 +97,12 @@ function afficherJour() {
     <div class="seance-tete"><h1 class="titre">Jour ${numero} · ${esc(jour.titreTxt || jour.titre)}</h1></div>
     <p class="objectif">${esc(jour.niveau)} — ${esc(jour.objectif)}</p>
 
-    <section class="bloc"><h2>Apprendre <small>≈ 12 minutes</small></h2>
+    <section class="bloc" id="apprendre"><h2>Apprendre <small>≈ 12 minutes</small></h2>
       <div class="content">${jour.apprendre}</div></section>
 
-    <section class="bloc"><h2>Exercices <small>≈ 18 minutes · réponds aux trois puis envoie-les</small></h2>
+    <section class="bloc" id="exercices"><h2>Exercices <small>≈ 18 minutes · réponds aux trois puis envoie-les</small></h2>
       ${jour.exercices.map((e, i) => `
-        <div class="exo">
+        <div class="exo" id="exercice-${i + 1}">
           <h3>Exercice ${i + 1} · ${esc(e.titre)}<span class="etoiles" aria-label="difficulté ${e.etoiles}">${"★".repeat(e.etoiles || 1)}</span></h3>
           <div class="content">${e.enonce}</div>
           <label class="code-label" for="rep-${i}">Ma réponse</label>
@@ -145,6 +145,10 @@ function afficherJour() {
     revelerCorriges();
   }
   mathematiques(c);
+  // Arrivée depuis la recherche (#apprendre, #exercice-2…) : la page est dessinée après chargement,
+  // on amène donc la partie demandée à l'écran une fois le contenu en place.
+  const cible = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+  if (cible) cible.scrollIntoView({ block: "start" });
 }
 
 function majEssais() {

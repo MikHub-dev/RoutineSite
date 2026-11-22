@@ -129,6 +129,10 @@ async function afficher() {
             <button type="button" class="lien" onclick="sortir()">Changer de code</button>
           </div>
           <p class="niveau">Deux parcours de 100 séances, 50 heures chacun.</p>
+          <div class="recherche" role="search">
+            <input class="input input--recherche" id="recherche" type="search" placeholder="Chercher dans les 200 séances : loi binomiale, Python, IP…" aria-label="Chercher dans les séances" autocomplete="off" spellcheck="false">
+            <div class="resultats" id="resultats" hidden aria-live="polite"></div>
+          </div>
           <div class="routines">${ROUTINES.map(r => routineHtml(r, s)).join("")}${paroleHtml(s)}</div>
         </section>
       </div>`;
@@ -137,7 +141,71 @@ async function afficher() {
       <p class="sous-titre">Chaque classe a son espace : entrez votre code dans la vignette de votre classe.</p>
       <div class="vignettes">${CLASSES.map(vignetteHtml).join("")}</div>`;
   }
+  if (s) brancherRecherche();
   c.insertAdjacentHTML("beforeend", `<footer class="pied">RoutineSite · un rituel de 30 minutes par jour sur un sujet à approfondir. <a class="lien lien--discret" href="enseignant.html">Espace enseignant</a></footer>`);
+}
+
+// ---------- Recherche dans les séances ----------
+// Les fichiers data/*.json sont lus à la première frappe. Chaque séance donne trois sortes d'entrées :
+// la séance (titre et objectif), sa partie « Apprendre », et chacun de ses exercices (énoncé seulement :
+// les corrigés et « À retenir » ne sont pas cherchés, pour ne rien dévoiler avant l'envoi).
+// Un résultat ouvre jour.html sur la bonne partie (#apprendre, #exercice-2…).
+let indexSeances = null;
+const sansAccent = t => String(t).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+function texteDe(html) {
+  const d = new DOMParser().parseFromString(String(html || ""), "text/html");
+  d.querySelectorAll("p,li,div,h3,h4,td,th,br,pre").forEach(n => n.after(" "));
+  return d.body.textContent.replace(/\s+/g, " ").trim();
+}
+function chargerSeances() {
+  if (indexSeances) return indexSeances;
+  indexSeances = Promise.all(ROUTINES.map(r => fetch(`data/${r.cle}.json`).then(x => x.json()).then(d => {
+    const l = [];
+    d.jours.forEach(j => {
+      const url = `jour.html?r=${r.cle}&j=${j.n}`, titre = `Jour ${j.n} · ${j.titreTxt || texteDe(j.titre)}`;
+      const ajouter = (ancre, sous, texte) => l.push({ url: url + ancre, titre, sous: `${r.titre} · ${sous}`, texte, nt: sansAccent(titre), nx: sansAccent(texte) });
+      ajouter("", j.niveau || "Séance", texteDe(j.objectif));
+      ajouter("#apprendre", "Apprendre", texteDe(j.apprendre));
+      (j.exercices || []).forEach((e, i) => ajouter(`#exercice-${i + 1}`, `Exercice ${i + 1} · ${texteDe(e.titre)}`, texteDe(e.enonce)));
+    });
+    return l;
+  }).catch(() => []))).then(t => t.flat());
+  return indexSeances;
+}
+function extraitSeance(e, mots) {
+  let i = e.nx.indexOf(mots.join(" "));   // d'abord l'expression entière, puis chaque mot
+  for (const m of mots) { if (i >= 0) break; i = e.nx.indexOf(m); }
+  if (i < 0 || e.nx.length !== e.texte.length) return esc(e.texte.slice(0, 140)) + (e.texte.length > 140 ? "…" : "");
+  let a = Math.max(0, i - 60); const b = Math.min(e.texte.length, i + 110);
+  if (a > 0) { const sp = e.texte.indexOf(" ", a); if (sp > -1 && sp < i) a = sp + 1; }
+  const brut = e.texte.slice(a, b), n = sansAccent(brut), r = [];
+  mots.forEach(m => { let k = 0; while ((k = n.indexOf(m, k)) > -1) { r.push([k, k + m.length]); k += m.length; } });
+  r.sort((x, y) => x[0] - y[0]);
+  let out = "", pos = 0;
+  r.forEach(([d, f]) => { if (d < pos) return; out += esc(brut.slice(pos, d)) + "<mark>" + esc(brut.slice(d, f)) + "</mark>"; pos = f; });
+  return (a > 0 ? "…" : "") + out + esc(brut.slice(pos)) + (b < e.texte.length ? "…" : "");
+}
+function brancherRecherche() {
+  const q = document.getElementById("recherche"), zone = document.getElementById("resultats");
+  if (!q) return;
+  q.addEventListener("focus", chargerSeances, { once: true });
+  q.addEventListener("input", async () => {
+    const brut = q.value.trim(), mots = sansAccent(brut).split(/\s+/).filter(m => m.length > 1 || /\d/.test(m));
+    if (!mots.length) { zone.hidden = true; zone.innerHTML = ""; return; }
+    const l = await chargerSeances();
+    if (q.value.trim() !== brut) return;
+    const res = l.map(e => {
+      let sc = 0;
+      for (const m of mots) { const t = e.nt.includes(m), x = e.nx.includes(m); if (!t && !x) return null; sc += (t ? 10 : 0) + (x ? 1 : 0); }
+      return { e, sc };
+    }).filter(Boolean).sort((a, b) => b.sc - a.sc);
+    const vus = res.slice(0, 15);
+    zone.innerHTML = res.length
+      ? `<p class="resultats-tete">${res.length} passage${res.length > 1 ? "s" : ""}${res.length > vus.length ? ` (les ${vus.length} premiers)` : ""}</p>` +
+        vus.map(({ e }) => `<a class="resultat" href="${esc(e.url)}"><b>${esc(e.titre)}</b><small>${esc(e.sous)}</small><span>${extraitSeance(e, mots)}</span></a>`).join("")
+      : `<p class="resultats-tete">Aucune séance ne contient « ${esc(brut)} ».</p>`;
+    zone.hidden = false;
+  });
 }
 
 async function entrer(classe) {
