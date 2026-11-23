@@ -358,6 +358,9 @@ var src_default = {
       if (chemin === "/admin/parole/noter") return await adminParoleNoter(env, request, corps, cors);
       if (chemin === "/admin/parole/analyser") return await adminParoleAnalyser(env, ctx, request, corps, cors);
       if (chemin === "/admin/parole/supprimer") return await adminParoleSupprimer(env, request, corps, cors);
+      if (chemin === "/progres/lire") return await progresLire(env, corps, cors);
+      if (chemin === "/progres/ecrire") return await progresEcrire(env, corps, cors);
+      if (chemin === "/admin/progres") return await adminProgres(env, request, corps, cors);
       if (chemin === "/reponses/envoyer") return await reponsesEnvoyer(env, corps, cors);
       if (chemin === "/reponses/etat") return await reponsesEtat(env, corps, cors);
       if (chemin === "/admin/reponses") return await adminReponses(env, request, corps, cors);
@@ -395,6 +398,75 @@ async function joursDe(env, empreinte) {
   }
   ROUTINES.forEach((r) => jours[r].sort((a, b) => a - b));
   return jours;
+}
+var SITES_PROGRES = ["routinesite", "mathsite", "quantumsite", "culturegsite", "iasite", "morphosite"];
+var PROGRES_MAX_CLE = 160;
+var PROGRES_MAX_VALEUR = 4e3;
+var PROGRES_MAX_SITE = 6e4;
+async function progresLire(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  const progres = {};
+  for (const site of SITES_PROGRES) {
+    const brut = await env.SUIVI.get(`prog:${eleve.empreinte}:${site}`);
+    if (brut) {
+      try {
+        progres[site] = JSON.parse(brut).valeurs || {};
+      } catch (e) {
+      }
+    }
+  }
+  const dates = [];
+  for (const nom of await toutesLesCles(env, `fait:${eleve.empreinte}:`)) {
+    try {
+      const v = JSON.parse(await env.SUIVI.get(nom));
+      if (v && v.date) dates.push(v.date);
+    } catch (e) {
+    }
+  }
+  return json({ ok: true, progres, dates: dates.sort() }, 200, cors);
+}
+async function progresEcrire(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  if (!SITES_PROGRES.includes(c.site)) return json({ erreur: "Site inconnu" }, 400, cors);
+  if (!c.valeurs || typeof c.valeurs !== "object" || Array.isArray(c.valeurs)) return json({ erreur: "Valeurs invalides" }, 400, cors);
+  const cle = `prog:${eleve.empreinte}:${c.site}`;
+  let actuel = {};
+  try {
+    actuel = (JSON.parse(await env.SUIVI.get(cle)) || {}).valeurs || {};
+  } catch (e) {
+  }
+  for (const [k, v] of Object.entries(c.valeurs)) {
+    if (typeof k !== "string" || !k || k.length > PROGRES_MAX_CLE) return json({ erreur: "Cl\xE9 invalide" }, 400, cors);
+    if (v === null) {
+      delete actuel[k];
+      continue;
+    }
+    if (JSON.stringify(v).length > PROGRES_MAX_VALEUR) return json({ erreur: "Valeur trop longue" }, 400, cors);
+    actuel[k] = v;
+  }
+  const texte = JSON.stringify({ code: eleve.code, classe: c.classe, maj: (/* @__PURE__ */ new Date()).toISOString(), valeurs: actuel });
+  if (texte.length > PROGRES_MAX_SITE) return json({ erreur: "Progression trop volumineuse" }, 400, cors);
+  await env.SUIVI.put(cle, texte);
+  return json({ ok: true }, 200, cors);
+}
+async function adminProgres(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  const eleves = {};
+  for (const nom of await toutesLesCles(env, "prog:")) {
+    const [, empreinte, site] = nom.split(":");
+    let v = null;
+    try {
+      v = JSON.parse(await env.SUIVI.get(nom));
+    } catch (e2) {
+    }
+    if (!v) continue;
+    const e = eleves[empreinte] || (eleves[empreinte] = { empreinte, code: v.code, classe: v.classe, sites: {} });
+    e.sites[site] = { maj: v.maj, valeurs: v.valeurs };
+  }
+  return json({ ok: true, eleves: Object.values(eleves) }, 200, cors);
 }
 async function adminEtat(env, request, c, cors) {
   const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);

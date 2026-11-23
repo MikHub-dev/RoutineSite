@@ -204,6 +204,15 @@ async function synchroniserJours(session) {
     for (const routine of Object.keys(jours)) {
       try { localStorage.setItem(cleJours(routine, session.code), JSON.stringify(jours[routine])); } catch (e) {}
     }
+    // Dates des jours faits enregistrées par le serveur : la série de jours d'affilée suit l'élève sur tous ses appareils.
+    try {
+      const { dates } = await appelerSuivi("/progres/lire", { classe: session.classe, code: session.code });
+      if (Array.isArray(dates) && dates.length) {
+        const ens = new Set(lireDates(session.code));
+        dates.forEach(iso => { const d = new Date(iso); if (!isNaN(d)) ens.add(dateLocale(d)); });
+        localStorage.setItem(cleDates(session.code), JSON.stringify([...ens].sort().slice(-400)));
+      }
+    } catch (e) { /* serveur pas encore à jour : série gardée sur l'appareil */ }
     return true;
   } catch (e) { return false; }
 }

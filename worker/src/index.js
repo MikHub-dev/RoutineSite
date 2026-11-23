@@ -1,4 +1,4 @@
-// Version : 1.5 (réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
+// Version : 1.6 (progression des jeux des 6 sites FamZakSites liée au code élève ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
 // Worker « routinesite-suivi » : suivi des jours faits par élève pour RoutineSite.
 //
 // Routes (toutes en POST, JSON) :
@@ -29,6 +29,12 @@
 //   /admin/reponses/relancer { motdepasse, cle }              -> redemande une correction à Claude
 //   /admin/reponses/supprimer { motdepasse, cle }             -> supprime un envoi du suivi
 //
+// Progression des jeux (quiz, badges, défis) des sites FamZakSites, liée au code élève (fichier famzak-progres.js des sites) :
+//   /progres/lire       { classe, code }                      -> { progres: { <site>: { <clé>: valeur } }, dates: [ISO…] }
+//                        (dates : jours de routine faits, pour la série de jours d'affilée de RoutineSite)
+//   /progres/ecrire     { classe, code, site, valeurs: { <clé>: valeur } } -> fusionne ces valeurs (null efface une clé)
+//   /admin/progres      { motdepasse }                        -> progression de tous les élèves
+//
 // Analyse automatique : lancée après chaque enregistrement de séance (en arrière-plan) avec Cloudflare Workers AI
 // (binding « AI » dans wrangler.toml, gratuit dans la franchise quotidienne, aucune clé) : un modèle de langage juge les critères
 // « jugés » et rédige le retour, un modèle d'embeddings recoupe la pertinence des liens. Voir analyse.js.
@@ -39,6 +45,7 @@
 // Secret : ADMIN_PASSWORD (le même mot de passe enseignant que MathSite).
 // Stockage KV « SUIVI » : clé  fait:<empreinte>:<routine>:<jour>  ->  { code, classe, date }
 //                        clé  parole:<empreinte>:<jour>:<séance>  ->  { code, classe, jour, seance, date, maj, bilan, ex1, ex2, notes, retour }
+//                        clé  prog:<empreinte>:<site>  ->  { code, classe, maj, valeurs: { <clé>: valeur } }
 //                        clé  rep:<empreinte>:<routine>:<jour>:<envoi>  ->  { code, classe, routine, jour, envoi, date, reponses, statut, chemin, correction }
 
 import { CRITERES, analyserSeance, signature } from "./analyse.js";
@@ -83,6 +90,9 @@ export default {
       if (chemin === "/admin/parole/noter") return await adminParoleNoter(env, request, corps, cors);
       if (chemin === "/admin/parole/analyser") return await adminParoleAnalyser(env, ctx, request, corps, cors);
       if (chemin === "/admin/parole/supprimer") return await adminParoleSupprimer(env, request, corps, cors);
+      if (chemin === "/progres/lire") return await progresLire(env, corps, cors);
+      if (chemin === "/progres/ecrire") return await progresEcrire(env, corps, cors);
+      if (chemin === "/admin/progres") return await adminProgres(env, request, corps, cors);
       if (chemin === "/reponses/envoyer") return await reponsesEnvoyer(env, corps, cors);
       if (chemin === "/reponses/etat") return await reponsesEtat(env, corps, cors);
       if (chemin === "/admin/reponses") return await adminReponses(env, request, corps, cors);
@@ -124,6 +134,59 @@ async function joursDe(env, empreinte) {
   }
   ROUTINES.forEach(r => jours[r].sort((a, b) => a - b));
   return jours;
+}
+
+// ---------- Progression des jeux (FamZakSites) ----------
+const SITES_PROGRES = ["routinesite", "mathsite", "quantumsite", "culturegsite", "iasite", "morphosite"];
+const PROGRES_MAX_CLE = 160, PROGRES_MAX_VALEUR = 4000, PROGRES_MAX_SITE = 60000;
+
+async function progresLire(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  const progres = {};
+  for (const site of SITES_PROGRES) {
+    const brut = await env.SUIVI.get(`prog:${eleve.empreinte}:${site}`);
+    if (brut) { try { progres[site] = JSON.parse(brut).valeurs || {}; } catch (e) {} }
+  }
+  const dates = [];
+  for (const nom of await toutesLesCles(env, `fait:${eleve.empreinte}:`)) {
+    try { const v = JSON.parse(await env.SUIVI.get(nom)); if (v && v.date) dates.push(v.date); } catch (e) {}
+  }
+  return json({ ok: true, progres, dates: dates.sort() }, 200, cors);
+}
+
+async function progresEcrire(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  if (!SITES_PROGRES.includes(c.site)) return json({ erreur: "Site inconnu" }, 400, cors);
+  if (!c.valeurs || typeof c.valeurs !== "object" || Array.isArray(c.valeurs)) return json({ erreur: "Valeurs invalides" }, 400, cors);
+  const cle = `prog:${eleve.empreinte}:${c.site}`;
+  let actuel = {};
+  try { actuel = (JSON.parse(await env.SUIVI.get(cle)) || {}).valeurs || {}; } catch (e) {}
+  for (const [k, v] of Object.entries(c.valeurs)) {
+    if (typeof k !== "string" || !k || k.length > PROGRES_MAX_CLE) return json({ erreur: "Clé invalide" }, 400, cors);
+    if (v === null) { delete actuel[k]; continue; }
+    if (JSON.stringify(v).length > PROGRES_MAX_VALEUR) return json({ erreur: "Valeur trop longue" }, 400, cors);
+    actuel[k] = v;
+  }
+  const texte = JSON.stringify({ code: eleve.code, classe: c.classe, maj: new Date().toISOString(), valeurs: actuel });
+  if (texte.length > PROGRES_MAX_SITE) return json({ erreur: "Progression trop volumineuse" }, 400, cors);
+  await env.SUIVI.put(cle, texte);
+  return json({ ok: true }, 200, cors);
+}
+
+async function adminProgres(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  const eleves = {};
+  for (const nom of await toutesLesCles(env, "prog:")) {
+    const [, empreinte, site] = nom.split(":");
+    let v = null; try { v = JSON.parse(await env.SUIVI.get(nom)); } catch (e) {}
+    if (!v) continue;
+    const e = eleves[empreinte] || (eleves[empreinte] = { empreinte, code: v.code, classe: v.classe, sites: {} });
+    e.sites[site] = { maj: v.maj, valeurs: v.valeurs };
+  }
+  return json({ ok: true, eleves: Object.values(eleves) }, 200, cors);
 }
 
 // ---------- Enseignant ----------

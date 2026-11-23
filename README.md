@@ -9,3 +9,6 @@ Après « Envoyer mes réponses » (`jour.html`), les réponses sont corrigées 
 
 ## Recherche
 Dans « Mon espace » (après saisie du code), une zone de recherche parcourt les 200 séances de `data/probabilites.json` et `data/technologie.json` : titre, objectif, partie « Apprendre » et énoncés des exercices (les corrigés et « À retenir » ne sont pas cherchés). Chaque résultat ouvre `jour.html` sur la bonne partie (`#apprendre`, `#exercice-2`…).
+
+## Jours d'affilée et badges
+Dans « Mon espace » : badges à 1, 10, 30, 50 et 100 jours (jours faits, gardés par le serveur) et série de jours d'affilée. Les dates viennent du serveur (`/progres/lire`, Worker 1.6) : la série suit l'élève sur tous ses appareils. Le même Worker garde la progression des jeux des autres sites FamZakSites (voir `worker/LISEZMOI.md`).

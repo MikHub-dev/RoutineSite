@@ -166,3 +166,8 @@ node worker/test/reponses.test.mjs  # réponses écrites corrigées par Claude, 
 
 - Le Worker enregistre qu'un élève a **validé** un jour sur le site. La preuve que l'e-mail est bien parti est l'e-mail reçu.
 - Les contrôles côté site (entrée par code) ne sont pas une sécurité forte : les pages et fichiers du dépôt sont publics. Les données de suivi, elles, ne sont accessibles qu'avec un code valide (élève) ou le mot de passe (enseignant).
+
+## Progression des jeux liée au code (version 1.6)
+
+Les routes `/progres/lire`, `/progres/ecrire` et `/admin/progres` gardent, par code élève, la progression des jeux des six sites FamZakSites (meilleurs scores de quiz, fiches vues, badges, défis FFJM…). Les sites passent par le fichier commun `famzak-progres.js` : le code est saisi une fois (il est partagé par les six sites, qui ont la même adresse de base), chaque progrès est gardé sur l'appareil puis envoyé ici, et récupéré à la connexion sur un autre appareil. Clé KV : `prog:<empreinte>:<site>`. `/progres/lire` renvoie aussi les dates des jours de routine faits (série de jours d'affilée de RoutineSite). `dist/worker.js` est régénéré par `npx esbuild src/index.js --bundle --format=esm --outfile=dist/worker.js`.
+
