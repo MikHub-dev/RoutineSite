@@ -4,11 +4,13 @@
 const SEL = "mathsite:";
 const CLASSES = [
   { key: "5e", nom: "5e", niveau: "Collège" },
-  { key: "seconde", nom: "Seconde", niveau: "Lycée" }
+  { key: "seconde", nom: "Seconde", niveau: "Lycée" },
+  { key: "famille", nom: "Famille", niveau: "Tous niveaux" }
 ];
 const EMPREINTES = {
   "5e": ["489c1aecd78964bf6e285c1425430f40b6a14f6cc4ba1f9ffd2bc2f48b203a24"],
-  "seconde": ["8f29042f5b26a90537a0cec56715742c14a0e793fd534ed7b5478796565bc56f"]
+  "seconde": ["8f29042f5b26a90537a0cec56715742c14a0e793fd534ed7b5478796565bc56f"],
+  "famille": ["d407849a1cdcd66d153dede7d147896ded5bab84e54ae1d9e1fe6962234505fb", "d91d5de7dffd23db09ceeb90d067be821556434b0e5715de302ec7c76b00c5a1", "3d59bb698ab0002a131b50fabda888d0a1ff1ede656436267ce636bf2d78f8de"]
 };
 const STOCKAGE = "routinesite:code";
 // Adresse qui reçoit les réponses des élèves (assemblée ici pour ne pas figurer d'un bloc dans le code).

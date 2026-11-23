@@ -318,7 +318,7 @@ async function analyserSeance(env, seance, historique) {
 
 // src/index.js
 var ROUTINES = ["probabilites", "technologie", "parole"];
-var CLASSES = ["5e", "seconde"];
+var CLASSES = ["5e", "seconde", "famille"];
 var MAX_ECHECS = 10;
 var BLOCAGE_SECONDES = 900;
 var src_default = {
@@ -638,7 +638,7 @@ async function paroleAudio(env, c, cors) {
   }
   return json({ ok: true, chemin }, 200, cors);
 }
-var CHEMIN_ARCHIVE = /^audio\/(5e|seconde)\/[A-Z0-9]{6,20}\/jour-\d{3}\/[\w.-]+\.(webm|ogg|m4a|mp3|json)$/;
+var CHEMIN_ARCHIVE = /^audio\/(5e|seconde|famille)\/[A-Z0-9]{6,20}\/jour-\d{3}\/[\w.-]+\.(webm|ogg|m4a|mp3|json)$/;
 var TYPES_SERVIS = { webm: "audio/webm", ogg: "audio/ogg", m4a: "audio/mp4", mp3: "audio/mpeg", json: "application/json" };
 async function archiveUtilisable(env, cors) {
   const depot = env.AUDIO_REPO || "";

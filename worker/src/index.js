@@ -51,7 +51,7 @@
 import { CRITERES, analyserSeance, signature } from "./analyse.js";
 
 const ROUTINES = ["probabilites", "technologie", "parole"];
-const CLASSES = ["5e", "seconde"];
+const CLASSES = ["5e", "seconde", "famille"];
 const MAX_ECHECS = 10;          // tentatives de mot de passe avant blocage
 const BLOCAGE_SECONDES = 900;   // durée du blocage (15 min)
 
@@ -345,7 +345,7 @@ async function paroleAudio(env, c, cors) {
 }
 
 // ---------- Archive audio : accès réservé à l'enseignant (mot de passe) ----------
-const CHEMIN_ARCHIVE = /^audio\/(5e|seconde)\/[A-Z0-9]{6,20}\/jour-\d{3}\/[\w.-]+\.(webm|ogg|m4a|mp3|json)$/;
+const CHEMIN_ARCHIVE = /^audio\/(5e|seconde|famille)\/[A-Z0-9]{6,20}\/jour-\d{3}\/[\w.-]+\.(webm|ogg|m4a|mp3|json)$/;
 const TYPES_SERVIS = { webm: "audio/webm", ogg: "audio/ogg", m4a: "audio/mp4", mp3: "audio/mpeg", json: "application/json" };
 
 // Dépôt d'archive utilisable (configuré ET privé) : nom du dépôt, ou une réponse d'erreur.
