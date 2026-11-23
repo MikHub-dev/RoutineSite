@@ -1,4 +1,4 @@
-// ../../home/claude/routinesite/worker/src/analyse.js
+// src/analyse.js
 var MODELE_DEFAUT = "@cf/mistralai/mistral-small-3.1-24b-instruct";
 var MODELE_EMBED_DEFAUT = "@cf/baai/bge-m3";
 var DELAI_MS = 25e3;
@@ -316,12 +316,12 @@ async function analyserSeance(env, seance, historique) {
   return { analyse, notesAuto: complet ? notes : null };
 }
 
-// ../../home/claude/routinesite/worker/src/index.js
+// src/index.js
 var ROUTINES = ["probabilites", "technologie", "parole"];
 var CLASSES = ["5e", "seconde"];
 var MAX_ECHECS = 10;
 var BLOCAGE_SECONDES = 900;
-var index_default = {
+var src_default = {
   async fetch(request, env, ctx) {
     const origine = request.headers.get("Origin") || "";
     const autorisees = (env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -358,6 +358,12 @@ var index_default = {
       if (chemin === "/admin/parole/noter") return await adminParoleNoter(env, request, corps, cors);
       if (chemin === "/admin/parole/analyser") return await adminParoleAnalyser(env, ctx, request, corps, cors);
       if (chemin === "/admin/parole/supprimer") return await adminParoleSupprimer(env, request, corps, cors);
+      if (chemin === "/reponses/envoyer") return await reponsesEnvoyer(env, corps, cors);
+      if (chemin === "/reponses/etat") return await reponsesEtat(env, corps, cors);
+      if (chemin === "/admin/reponses") return await adminReponses(env, request, corps, cors);
+      if (chemin === "/admin/reponses/modifier") return await adminReponsesModifier(env, request, corps, cors);
+      if (chemin === "/admin/reponses/relancer") return await adminReponsesRelancer(env, request, corps, cors);
+      if (chemin === "/admin/reponses/supprimer") return await adminReponsesSupprimer(env, request, corps, cors);
     } catch (e) {
       return json({ erreur: "Erreur du serveur" }, 500, cors);
     }
@@ -791,6 +797,218 @@ async function adminParoleSupprimer(env, request, c, cors) {
   if (existe) await env.SUIVI.delete(c.cle);
   return json({ ok: true, supprimees: existe ? 1 : 0 }, 200, cors);
 }
+var ROUTINES_ECRITES = ["probabilites", "technologie"];
+var CLE_REPONSE = /^rep:[0-9a-f]{64}:(probabilites|technologie):\d{1,3}:\d{10,14}$/;
+var MAX_ENVOIS_JOUR = 20;
+var MAX_REPONSE = 3e3;
+var ATTENTE_VERIF_MS = 15e3;
+var RETARD_MS = 30 * 60 * 1e3;
+var VERDICTS = ["juste", "partiel", "faux", "vide"];
+var cheminEnvoi = (v) => `reponses/${v.classe}/${v.code}/${v.routine}/jour-${String(v.jour).padStart(3, "0")}/${v.envoi}.json`;
+var cheminCorrection = (v) => "corrections/" + cheminEnvoi(v).slice("reponses/".length);
+var depuisBase64 = (b) => {
+  const bin = atob(String(b).replace(/\s/g, ""));
+  return new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0)));
+};
+async function deposerEnvoi(env, depot, v, relance = 0) {
+  const chemin = cheminEnvoi(v);
+  const contenu = JSON.stringify({ classe: v.classe, code: v.code, routine: v.routine, jour: v.jour, envoi: v.envoi, essai: v.essai, date: v.date, relance, reponses: v.reponses }, null, 2);
+  let sha;
+  if (relance) {
+    const r0 = await appelGitHub(env, "GET", `/repos/${depot}/contents/${chemin}${parametreBranche(env)}`);
+    if (r0.ok) sha = (await r0.json().catch(() => ({}))).sha;
+  }
+  const r = await appelGitHub(env, "PUT", `/repos/${depot}/contents/${chemin}`, {
+    message: `R\xE9ponses ${v.code} ${v.routine} jour ${v.jour} (envoi ${v.envoi}${relance ? `, relance ${relance}` : ""})`,
+    content: versBase64(contenu),
+    ...sha ? { sha } : {},
+    ...env.AUDIO_BRANCH ? { branch: env.AUDIO_BRANCH } : {}
+  });
+  if (r.ok) return { ok: true, chemin };
+  if (r.status === 422 && !relance) return { ok: true, chemin, dejaLa: true };
+  return { ok: false, statut: r.status };
+}
+function correctionValide(o, nbExercices) {
+  if (!o || typeof o !== "object") return null;
+  const questions = Array.isArray(o.questions) ? o.questions.slice(0, 40).map((q) => ({
+    exercice: Math.min(nbExercices || 3, Math.max(1, parseInt(q && q.exercice, 10) || 1)),
+    question: texteBorne(String((q && q.question) ?? ""), 10),
+    verdict: VERDICTS.includes(q && q.verdict) ? q.verdict : "faux",
+    commentaire: texteBorne(q && q.commentaire, 400)
+  })) : [];
+  const total = Number.isInteger(o.total) && o.total > 0 ? Math.min(o.total, 60) : questions.length;
+  const justes = nombreOuNull(o.justes);
+  return {
+    justes: justes === null ? questions.filter((q) => q.verdict === "juste").length : Math.min(total, Math.max(0, justes)),
+    total,
+    questions,
+    texte: texteBorne(o.texte, 12e3),
+    aVerifier: texteBorne(o.aVerifier, 1e3),
+    modele: texteBorne(o.modele, 60)
+  };
+}
+async function recupererCorrection(env, cle, v, force = false) {
+  if (v.statut !== "en_cours") return v;
+  const maintenant = Date.now();
+  if (!force && v.verifieLe && maintenant - Date.parse(v.verifieLe) < ATTENTE_VERIF_MS) return v;
+  const depot = env.AUDIO_REPO || "";
+  if (!env.GITHUB_TOKEN || !/^[\w.-]+\/[\w.-]+$/.test(depot)) return v;
+  v.verifieLe = new Date(maintenant).toISOString();
+  try {
+    const r = await appelGitHub(env, "GET", `/repos/${depot}/contents/${cheminCorrection(v)}${parametreBranche(env)}`);
+    if (r.ok) {
+      const d = JSON.parse(depuisBase64((await r.json()).content || ""));
+      if ((Number(d.relance) || 0) >= (v.relance || 0)) {
+        if (d.statut === "echec") {
+          v.statut = "echec";
+          v.erreur = texteBorne(d.erreur, 300);
+        } else {
+          const c = correctionValide(d.correction, v.reponses.length);
+          if (c && c.texte) {
+            v.statut = "corrige";
+            v.correctionAuto = c;
+            v.correction = { justes: c.justes, total: c.total, texte: c.texte, questions: c.questions };
+            v.corrigeLe = d.date || (/* @__PURE__ */ new Date()).toISOString();
+          } else {
+            v.statut = "echec";
+            v.erreur = "Correction illisible";
+          }
+        }
+      }
+    }
+  } catch (e) {
+  }
+  await env.SUIVI.put(cle, JSON.stringify(v));
+  return v;
+}
+function vueEleve(v, cle) {
+  const enRetard = v.statut === "en_cours" && Date.now() - Date.parse(v.attenteDepuis || v.date) > RETARD_MS;
+  return {
+    cle,
+    routine: v.routine,
+    jour: v.jour,
+    envoi: v.envoi,
+    essai: v.essai,
+    date: v.date,
+    reponses: v.reponses,
+    statut: enRetard ? "en_retard" : v.statut,
+    correction: v.statut === "corrige" ? v.correction : null,
+    valide: !!v.valideLe
+  };
+}
+async function reponsesEnvoyer(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  if (!ROUTINES_ECRITES.includes(c.routine)) return json({ erreur: "Routine inconnue" }, 400, cors);
+  const jour = Number(c.jour);
+  if (!Number.isInteger(jour) || jour < 1 || jour > 100) return json({ erreur: "Jour invalide" }, 400, cors);
+  if (typeof c.envoi !== "string" || !/^\d{10,14}$/.test(c.envoi)) return json({ erreur: "Envoi invalide" }, 400, cors);
+  if (!Array.isArray(c.reponses) || c.reponses.length < 1 || c.reponses.length > 6) return json({ erreur: "R\xE9ponses invalides" }, 400, cors);
+  const reponses = c.reponses.map((x) => texteBorne(typeof x === "string" ? x : x && x.texte, MAX_REPONSE).trim());
+  if (reponses.some((x) => !x)) return json({ erreur: "R\xE9ponds \xE0 tous les exercices avant d'envoyer" }, 400, cors);
+  const cle = `rep:${eleve.empreinte}:${c.routine}:${jour}:${c.envoi}`;
+  const existant = JSON.parse(await env.SUIVI.get(cle) || "null");
+  if (existant) return json({ ok: true, deja: true, envoi: vueEleve(existant, cle) }, 200, cors);
+  const aujourdhui = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const cleQuota = `envois:${eleve.empreinte}:${aujourdhui}`;
+  const nbJour = Number(await env.SUIVI.get(cleQuota)) || 0;
+  if (nbJour >= MAX_ENVOIS_JOUR) return json({ erreur: "Tu as fait beaucoup d'envois aujourd'hui : r\xE9essaie demain" }, 429, cors);
+  await env.SUIVI.put(cleQuota, String(nbJour + 1), { expirationTtl: 172800 });
+  const essai = (await toutesLesCles(env, `rep:${eleve.empreinte}:${c.routine}:${jour}:`)).length + 1;
+  const v = { code: eleve.code, classe: c.classe, routine: c.routine, jour, envoi: c.envoi, essai, date: (/* @__PURE__ */ new Date()).toISOString(), reponses, statut: "en_cours", relance: 0 };
+  const cleFait = `fait:${eleve.empreinte}:${c.routine}:${jour}`;
+  if (!await env.SUIVI.get(cleFait)) await env.SUIVI.put(cleFait, JSON.stringify({ code: eleve.code, classe: c.classe, date: v.date }));
+  const a = await archiveUtilisable(env, cors);
+  if (a.refus) {
+    v.statut = "non_configure";
+  } else {
+    const d = await deposerEnvoi(env, a.depot, v);
+    if (d.ok) v.chemin = d.chemin;
+    else {
+      v.statut = "echec_depot";
+      v.erreur = `GitHub ${d.statut}`;
+    }
+  }
+  await env.SUIVI.put(cle, JSON.stringify(v));
+  return json({ ok: true, envoi: vueEleve(v, cle) }, 200, cors);
+}
+async function reponsesEtat(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  let prefixe = `rep:${eleve.empreinte}:`;
+  if (c.routine !== void 0) {
+    if (!ROUTINES_ECRITES.includes(c.routine)) return json({ erreur: "Routine inconnue" }, 400, cors);
+    prefixe += `${c.routine}:`;
+    if (c.jour !== void 0) {
+      const jour = Number(c.jour);
+      if (!Number.isInteger(jour) || jour < 1 || jour > 100) return json({ erreur: "Jour invalide" }, 400, cors);
+      prefixe += `${jour}:`;
+    }
+  }
+  const envois = [];
+  for (const cle of await toutesLesCles(env, prefixe)) {
+    let v = JSON.parse(await env.SUIVI.get(cle) || "null");
+    if (!v) continue;
+    v = await recupererCorrection(env, cle, v);
+    envois.push(vueEleve(v, cle));
+  }
+  envois.sort((x, y) => String(x.date).localeCompare(String(y.date)));
+  return json({ ok: true, envois }, 200, cors);
+}
+async function adminReponses(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  const envois = [];
+  for (const cle of await toutesLesCles(env, "rep:")) {
+    let v = JSON.parse(await env.SUIVI.get(cle) || "null");
+    if (!v) continue;
+    v = await recupererCorrection(env, cle, v);
+    envois.push({ cle, ...v });
+  }
+  envois.sort((x, y) => String(x.date).localeCompare(String(y.date)));
+  return json({ ok: true, envois }, 200, cors);
+}
+async function adminReponsesModifier(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  if (typeof c.cle !== "string" || !CLE_REPONSE.test(c.cle)) return json({ erreur: "Envoi invalide" }, 400, cors);
+  const v = JSON.parse(await env.SUIVI.get(c.cle) || "null");
+  if (!v) return json({ erreur: "Envoi introuvable" }, 404, cors);
+  const texte = texteBorne(c.texte, 12e3).trim();
+  if (!texte) return json({ erreur: "Le texte de correction est vide" }, 400, cors);
+  const total = Number.isInteger(Number(c.total)) && Number(c.total) > 0 ? Math.min(60, Number(c.total)) : v.correction && v.correction.total || 0;
+  const justes = nombreOuNull(c.justes);
+  v.correction = { ...v.correction || {}, texte, total, justes: justes === null ? v.correction && v.correction.justes || 0 : Math.min(total, Math.max(0, justes)) };
+  v.statut = "corrige";
+  v.valideLe = (/* @__PURE__ */ new Date()).toISOString();
+  await env.SUIVI.put(c.cle, JSON.stringify(v));
+  return json({ ok: true, correction: v.correction }, 200, cors);
+}
+async function adminReponsesRelancer(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  if (typeof c.cle !== "string" || !CLE_REPONSE.test(c.cle)) return json({ erreur: "Envoi invalide" }, 400, cors);
+  const v = JSON.parse(await env.SUIVI.get(c.cle) || "null");
+  if (!v) return json({ erreur: "Envoi introuvable" }, 404, cors);
+  const a = await archiveUtilisable(env, cors);
+  if (a.refus) return a.refus;
+  const relance = (v.relance || 0) + 1;
+  const d = await deposerEnvoi(env, a.depot, v, relance);
+  if (!d.ok) return json({ erreur: `D\xE9p\xF4t priv\xE9 : refus de GitHub (${d.statut})` }, 502, cors);
+  Object.assign(v, { relance, statut: "en_cours", chemin: d.chemin, attenteDepuis: (/* @__PURE__ */ new Date()).toISOString() });
+  delete v.erreur;
+  delete v.verifieLe;
+  await env.SUIVI.put(c.cle, JSON.stringify(v));
+  return json({ ok: true, statut: v.statut }, 200, cors);
+}
+async function adminReponsesSupprimer(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  if (typeof c.cle !== "string" || !CLE_REPONSE.test(c.cle)) return json({ erreur: "Envoi invalide" }, 400, cors);
+  const existe = !!await env.SUIVI.get(c.cle);
+  if (existe) await env.SUIVI.delete(c.cle);
+  return json({ ok: true, supprimes: existe ? 1 : 0 }, 200, cors);
+}
 async function verifierMotDePasse(env, request, saisi, cors) {
   if (!env.ADMIN_PASSWORD) return json({ erreur: "Mot de passe enseignant non configur\xE9" }, 503, cors);
   const ip = request.headers.get("CF-Connecting-IP") || "inconnue";
@@ -843,5 +1061,5 @@ function json(donnees, statut, cors) {
   return new Response(JSON.stringify(donnees), { status: statut, headers: { "Content-Type": "application/json", ...cors } });
 }
 export {
-  index_default as default
+  src_default as default
 };

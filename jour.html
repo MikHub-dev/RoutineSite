@@ -32,6 +32,20 @@
   .ok { color: var(--vert); font-size: 15px; margin: 10px 0 0; }
   .corr { margin-top: 14px; border-left: 3px solid var(--vert); padding: 4px 0 0 16px; }
   .corr > .box-h { color: var(--vert); }
+  .mes-corr .essai { border-top: 1px solid var(--bord); padding-top: 14px; margin-top: 14px; }
+  .mes-corr .essai:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+  .mes-corr h3 { margin: 0 0 8px; font-size: 17px; }
+  .mes-corr h3 small { color: var(--doux); font-weight: 400; font-size: 14px; margin-left: 8px; }
+  .score { font-size: 18px; font-weight: 700; color: var(--vert); margin: 0 0 8px; }
+  .verdicts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; padding: 0; list-style: none; }
+  .verdicts li { font-size: 13px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--bord); }
+  .verdicts .juste { color: var(--vert); border-color: var(--vert); }
+  .verdicts .partiel { color: var(--ambre, #e3b053); border-color: var(--ambre, #e3b053); }
+  .verdicts .faux, .verdicts .vide { color: var(--rouge); border-color: var(--rouge); }
+  .texte-corr { white-space: pre-wrap; font: inherit; font-size: 16px; line-height: 1.6; background: var(--fond); border: 1px solid var(--bord); border-radius: 8px; padding: 14px 16px; margin: 0; }
+  .attente { color: var(--doux); font-size: 15px; margin: 0; }
+  .mes-reponses summary { color: var(--doux); font-size: 14px; cursor: pointer; margin-top: 10px; }
+  .mes-reponses pre { white-space: pre-wrap; font: inherit; font-size: 14px; color: var(--doux); margin: 6px 0 0; }
   .navjour { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
   [hidden] { display: none !important; }
 </style>
@@ -110,19 +124,21 @@ function afficherJour() {
           <div class="corr" id="corr-${i}" hidden><div class="box-h">Corrigé</div><div class="content">${e.correction}</div></div>
         </div>`).join("")}
       <div class="envoi" style="margin-top:20px">
-        <button type="button" class="btn" id="envoyer">Envoyer mes réponses par e-mail</button>
+        <button type="button" class="btn" id="envoyer">Envoyer mes réponses</button>
         <button type="button" class="btn btn--secondaire" id="recommencer" hidden>↻ Recommencer (nouvel essai)</button>
         <span class="info" id="etat"></span>
       </div>
-      <p class="info" id="essais">Tu peux refaire cette séance autant de fois que tu veux : chaque envoi est un essai conservé séparément par ton enseignant, avec ses réponses.</p>
+      <p class="info" id="essais">Tu peux refaire cette séance autant de fois que tu veux : chaque envoi est un essai conservé séparément, avec ses réponses et sa correction.</p>
       <p class="erreur" id="erreur" role="alert"></p>
       <div id="secours" hidden>
-        <p class="info">Rien ne s'est ouvert ? Utilise l'un de ces moyens, puis écris à l'adresse indiquée.</p>
-        <div class="envoi"><button type="button" class="btn btn--secondaire" id="copier">Copier le message</button>
+        <p class="info" id="secours-info">Rien ne s'est ouvert ? Utilise l'un de ces moyens, puis écris à l'adresse indiquée.</p>
+        <div class="envoi"><a class="btn btn--secondaire" id="mailto" href="#">Ouvrir ma messagerie</a>
+          <button type="button" class="btn btn--secondaire" id="copier">Copier le message</button>
           <a class="btn btn--secondaire" id="gmail" target="_blank" rel="noopener" href="#">Ouvrir dans Gmail</a></div>
       </div>
     </section>
 
+    <section class="bloc mes-corr" id="corrections" hidden><h2>Ma correction</h2><div id="liste-corr"></div></section>
     <section class="bloc" id="retenir" hidden><h2>À retenir</h2>
       <div class="content"><div class="box box-retenir"><div class="box-h">À retenir</div><p>${jour.retenir}</p></div></div></section>
 
@@ -144,6 +160,7 @@ function afficherJour() {
     document.getElementById("etat").textContent = "✓ Jour terminé : tes réponses ont été envoyées. Tu peux relire les corrigés.";
     revelerCorriges();
   }
+  chargerCorrections();
   mathematiques(c);
   // Arrivée depuis la recherche (#apprendre, #exercice-2…) : la page est dessinée après chargement,
   // on amène donc la partie demandée à l'écran une fois le contenu en place.
@@ -174,32 +191,118 @@ function composerMessage() {
   };
 }
 
-function envoyer() {
-  const err = document.getElementById("erreur");
-  const vides = jour.exercices.filter((_, i) => !document.getElementById(`rep-${i}`).value.trim());
-  if (vides.length) {
-    err.textContent = "Réponds aux trois exercices avant d'envoyer ton e-mail.";
-    return;
-  }
-  err.textContent = "";
-  const m = composerMessage();
+// ---------- Envoi : au serveur de suivi, qui fait corriger les réponses par Claude ; l'e-mail reste en secours ----------
+const cleEnvoi = () => `routinesite:envoi:${cleRoutine}:${numero}:${normaliser(session.code)}`;
+function preparerEmail(m, info) {
   const sujet = encodeURIComponent(m.sujet), corps = encodeURIComponent(m.corps);
+  const mailto = `mailto:${ADRESSE_ENSEIGNANT}?subject=${sujet}&body=${corps}`;
+  document.getElementById("mailto").href = mailto;
   document.getElementById("gmail").href =
     `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(ADRESSE_ENSEIGNANT)}&su=${sujet}&body=${corps}`;
   document.getElementById("copier").onclick = async () => {
     try { await navigator.clipboard.writeText(`À : ${ADRESSE_ENSEIGNANT}\nObjet : ${m.sujet}\n\n${m.corps}`); document.getElementById("etat").textContent = "Message copié."; }
     catch (e) { document.getElementById("etat").textContent = "Copie impossible : sélectionne et copie tes réponses à la main."; }
   };
+  if (info) document.getElementById("secours-info").textContent = info;
   document.getElementById("secours").hidden = false;
-  // Ouvre le logiciel de messagerie de l'élève avec le message prêt à envoyer.
-  location.href = `mailto:${ADRESSE_ENSEIGNANT}?subject=${sujet}&body=${corps}`;
+  return mailto;
+}
+function marquerEnvoye() {
   try { localStorage.setItem(cleEssais(), String(nbEssais() + 1)); } catch (e) {}
-  enregistrerJour(session, cleRoutine, numero);
+  ajouterJour(cleRoutine, session.code, numero);
   majEssais();
-  document.getElementById("etat").textContent = "✓ Jour validé sur cet appareil. Envoie le message qui vient de s'ouvrir : les corrigés sont affichés ci-dessous.";
   revelerCorriges();
 }
+async function envoyer() {
+  const err = document.getElementById("erreur");
+  const reponses = jour.exercices.map((_, i) => document.getElementById(`rep-${i}`).value.trim());
+  if (reponses.some(r => !r)) {
+    err.textContent = "Réponds aux trois exercices avant d'envoyer.";
+    return;
+  }
+  err.textContent = "";
+  const m = composerMessage();
+  const bouton = document.getElementById("envoyer");
+  if (URL_SUIVI) {
+    // Le même identifiant est réutilisé si l'envoi précédent n'a pas eu de réponse : le serveur ne le corrige qu'une fois.
+    let envoi = ""; try { envoi = localStorage.getItem(cleEnvoi()) || ""; } catch (e) {}
+    if (!/^\d{10,14}$/.test(envoi)) { envoi = String(Date.now()); try { localStorage.setItem(cleEnvoi(), envoi); } catch (e) {} }
+    bouton.disabled = true;
+    document.getElementById("etat").textContent = "Envoi en cours…";
+    try {
+      const rep = await appelerSuivi("/reponses/envoyer", { classe: session.classe, code: session.code, routine: cleRoutine, jour: numero, envoi, reponses }, 20000);
+      try { localStorage.removeItem(cleEnvoi()); } catch (e) {}
+      bouton.disabled = false;
+      if (!rep.deja) marquerEnvoye();
+      const statut = rep.envoi && rep.envoi.statut;
+      if (statut === "en_cours") {
+        document.getElementById("etat").textContent = "✓ Réponses envoyées. Ta correction arrive dans quelques minutes, juste en dessous.";
+        document.getElementById("secours").hidden = true;
+      } else {
+        document.getElementById("etat").textContent = "✓ Réponses enregistrées, mais la correction automatique n'est pas disponible pour le moment.";
+        preparerEmail(m, "Envoie aussi tes réponses par e-mail à ton enseignant pour qu'il les corrige :");
+      }
+      await chargerCorrections();
+      document.getElementById("corrections").scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    } catch (e) {
+      bouton.disabled = false;
+      if (e.statut && e.statut !== 404 && e.statut !== 503 && e.statut < 500) {   // refus explicite (code, quota…) : on l'affiche
+        try { localStorage.removeItem(cleEnvoi()); } catch (x) {}
+        err.textContent = e.message; document.getElementById("etat").textContent = ""; return;
+      }
+      // serveur injoignable ou pas encore mis à jour : on repasse par l'e-mail, comme avant
+    }
+  }
+  const mailto = preparerEmail(m, "Le serveur ne répond pas : envoie tes réponses par e-mail. Rien ne s'est ouvert ? Utilise l'un de ces moyens.");
+  location.href = mailto;
+  marquerEnvoye();
+  enregistrerJour(session, cleRoutine, numero);
+  document.getElementById("etat").textContent = "✓ Jour validé sur cet appareil. Envoie le message qui vient de s'ouvrir : les corrigés sont affichés ci-dessous.";
+}
 
+// ---------- Corrections de Claude pour ce jour ----------
+const LIBELLES = { juste: "juste", partiel: "en partie", faux: "à revoir", vide: "pas de réponse" };
+let minuterie = null, debutAttente = 0;
+const nfr = x => String(Math.round(Number(x) * 10) / 10).replace(".", ",");
+function correctionHtml(e) {
+  const date = new Date(e.date).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
+  let corps;
+  if (e.statut === "corrige" && e.correction) {
+    const c = e.correction;
+    const qs = (c.questions || []).map(q => `<li class="${esc(q.verdict)}" title="${esc(q.commentaire || "")}">Ex. ${q.exercice}${q.question ? " · " + esc(q.question) : ""} : ${esc(LIBELLES[q.verdict] || q.verdict)}</li>`).join("");
+    corps = `<p class="score">${nfr(c.justes)} réponse${c.justes > 1 ? "s" : ""} juste${c.justes > 1 ? "s" : ""} sur ${c.total}</p>
+      ${qs ? `<ul class="verdicts">${qs}</ul>` : ""}
+      <pre class="texte-corr">${esc(c.texte)}</pre>
+      <p class="info">${e.valide ? "Correction relue par ton enseignant." : "Correction rédigée par Claude (IA) d'après le corrigé du jour ; ton enseignant peut la relire et la modifier."}</p>`;
+  } else if (e.statut === "en_cours") {
+    corps = `<p class="attente">⏳ Correction en cours… Elle arrive en général en 2 à 5 minutes. Tu peux rester sur cette page ou revenir plus tard : elle t'attendra ici.</p>`;
+  } else if (e.statut === "en_retard") {
+    corps = `<p class="attente">La correction prend plus de temps que prévu. Reviens un peu plus tard ; sinon ton enseignant la fera.</p>`;
+  } else if (e.statut === "echec") {
+    corps = `<p class="attente">La correction automatique n'a pas abouti pour cet envoi. Ton enseignant a tes réponses et la relancera.</p>`;
+  } else {
+    corps = `<p class="attente">Réponses enregistrées. La correction automatique n'était pas disponible : ton enseignant corrigera cet envoi.</p>`;
+  }
+  return `<div class="essai"><h3>Essai ${e.essai || ""}<small>envoyé le ${esc(date)}</small></h3>${corps}
+    <details class="mes-reponses"><summary>Revoir mes réponses</summary>${(e.reponses || []).map((r, i) => `<pre><b>Exercice ${i + 1} :</b> ${esc(r)}</pre>`).join("")}</details></div>`;
+}
+async function chargerCorrections() {
+  if (!URL_SUIVI) return;
+  let envois;
+  try { envois = (await appelerSuivi("/reponses/etat", { classe: session.classe, code: session.code, routine: cleRoutine, jour: numero })).envois; }
+  catch (e) { return; }   // serveur pas encore mis à jour ou injoignable : la page reste comme avant
+  if (!envois || !envois.length) return;
+  const sec = document.getElementById("corrections");
+  sec.hidden = false;
+  sec.querySelector("h2").textContent = envois.length > 1 ? "Mes corrections" : "Ma correction";
+  document.getElementById("liste-corr").innerHTML = envois.slice().reverse().map(correctionHtml).join("");
+  clearTimeout(minuterie);
+  if (envois.some(e => e.statut === "en_cours")) {
+    if (!debutAttente) debutAttente = Date.now();
+    if (Date.now() - debutAttente < 30 * 60 * 1000) minuterie = setTimeout(chargerCorrections, 20000);
+  } else debutAttente = 0;
+}
 (async function () {
   const c = document.getElementById("contenu");
   session = await sessionValide();

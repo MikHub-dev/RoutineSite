@@ -52,6 +52,12 @@ La dernière commande affiche l'adresse du Worker, de la forme
 | `POST /admin/parole/reinitialiser` | l'enseignant | remet un jour (ou tous) à zéro, en gardant ou en supprimant les audios |
 | `POST /parole/analyser` | l'élève | relance l'analyse automatique de sa séance (si elle a échoué ou est restée bloquée) |
 | `POST /admin/parole/analyser` | l'enseignant | relance l'analyse d'une séance, sans plafond |
+| `POST /reponses/envoyer` | l'élève | enregistre ses réponses écrites (Probabilités, Technologie), valide le jour et les dépose dans le dépôt privé pour correction par Claude |
+| `POST /reponses/etat` | l'élève | renvoie ses envois avec leur correction quand elle est prête |
+| `POST /admin/reponses` | l'enseignant | liste tous les envois et leurs corrections |
+| `POST /admin/reponses/modifier` | l'enseignant | modifie le score ou le texte de correction affiché à l'élève |
+| `POST /admin/reponses/relancer` | l'enseignant | redemande une correction à Claude |
+| `POST /admin/reponses/supprimer` | l'enseignant | supprime un envoi du suivi |
 
 - Les codes ne sont jamais écrits dans le dépôt : seules leurs empreintes (SHA-256) figurent dans `wrangler.toml`.
 - Après 10 mots de passe erronés depuis une même adresse, l'accès enseignant est bloqué 15 minutes.
@@ -136,11 +142,24 @@ Si l'archive est inaccessible (jeton expiré, dépôt devenu public) alors qu'il
 - Sans configuration (ou si le dépôt est public), la page affiche « Audio non archivé » ; l'analyse et les notes restent enregistrées normalement.
 - Une voix d'élève est une donnée personnelle : prévenir l'élève (la page l'indique) et, s'il est mineur, ses parents ; supprimer les fichiers quand ils ne servent plus.
 
+## Corriger les réponses écrites avec Claude (version 1.5 : Probabilités et Technologie numérique)
+
+Quand l'élève appuie sur « Envoyer mes réponses » (`jour.html`), ses réponses ne partent plus par e-mail : le Worker les enregistre, valide le jour et les dépose **une seule fois** dans le dépôt privé d'archive (`reponses/<classe>/<CODE>/<routine>/jour-NNN/<envoi>.json`). Ce dépôt contient la GitHub Action `corriger-reponses.yml`, lancée par ce dépôt de fichier : Claude Code corrige l'envoi d'après l'énoncé et le corrigé du jour (`data/*.json`), dans le style des e-mails de retour, et écrit `corrections/<même chemin>`. Le Worker lit cette correction quand la page de l'élève la demande ; l'élève voit « Correction en cours… » puis son score et le texte complet, en général 2 à 5 minutes après l'envoi.
+
+- Claude utilise **l'abonnement de l'enseignant** (aucune clé API payante) : secret `CLAUDE_CODE_OAUTH_TOKEN` du dépôt privé, créé avec `claude setup-token` (valable un an). Chaque correction consomme le même quota que les conversations avec Claude.
+- Le Worker n'a besoin de **rien de nouveau** : il réutilise `GITHUB_TOKEN` et `AUDIO_REPO` (archive audio). Republier le Worker suffit (déploiement automatique à chaque push sur `main`).
+- **Un envoi = une correction** : un double clic ou un renvoi après coupure réseau réutilise le même identifiant d'envoi ; le Worker ne dépose pas deux fois le même fichier. L'Action ne traite que les envois sans correction et un seul passage tourne à la fois.
+- Plafond : 20 envois par élève et par jour.
+- Espace enseignant, section « Probabilités et Technologie : corrections de Claude » : relire, modifier le score ou le texte (l'élève voit alors la version de l'enseignant, marquée « relue »), redemander une correction à Claude, supprimer un envoi. Claude signale à part les corrigés du site qui lui semblent faux ou ambigus.
+- Si l'archive n'est pas configurée, ou si le Worker n'est pas joignable, la page repasse par l'e-mail comme avant.
+- **Confidentialité** : les réponses (texte seulement, avec le code de l'élève) sont envoyées à Claude sous le compte de l'enseignant ; désactiver dans claude.ai, Réglages > Confidentialité, l'option qui autorise l'utilisation des conversations pour améliorer les modèles.
+
 ## Tester en local
 
 ```bash
 node worker/test/worker.test.mjs
 node worker/test/analyse.test.mjs   # analyse automatique, avec Workers AI simulé
+node worker/test/reponses.test.mjs  # réponses écrites corrigées par Claude, avec GitHub simulé
 ```
 
 ## Limites à connaître
