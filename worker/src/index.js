@@ -1,4 +1,4 @@
-// Version : 1.6 (progression des jeux des 6 sites FamZakSites liée au code élève ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
+// Version : 1.6 (progression des jeux des 6 sites FamZakSites liée au code ZF ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
 // Worker « routinesite-suivi » : suivi des jours faits par élève pour RoutineSite.
 //
 // Routes (toutes en POST, JSON) :
@@ -29,7 +29,7 @@
 //   /admin/reponses/relancer { motdepasse, cle }              -> redemande une correction à Claude
 //   /admin/reponses/supprimer { motdepasse, cle }             -> supprime un envoi du suivi
 //
-// Progression des jeux (quiz, badges, défis) des sites FamZakSites, liée au code élève (fichier famzak-progres.js des sites) :
+// Progression des jeux (quiz, badges, défis) des sites FamZakSites, liée au code ZF (fichier famzak-progres.js des sites) :
 //   /progres/lire       { classe, code }                      -> { progres: { <site>: { <clé>: valeur } }, dates: [ISO…] }
 //                        (dates : jours de routine faits, pour la série de jours d'affilée de RoutineSite)
 //   /progres/ecrire     { classe, code, site, valeurs: { <clé>: valeur } } -> fusionne ces valeurs (null efface une clé)

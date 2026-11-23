@@ -1,10 +1,10 @@
-/* famzak-verrou.js — verrou simple des sites FamZakSites (v1.0).
+/* famzak-verrou.js — verrou simple (code ZF) des sites FamZakSites (v1.0).
    Un seul fichier, servi par RoutineSite, chargé en tête de chaque page des 6 sites :
      <script src="https://mikhub-dev.github.io/RoutineSite/famzak-verrou.js"></script>
    et par le portail https://famzak.github.io/ avec data-portail="oui" (il n'y sert qu'à vérifier les codes).
 
    Fonctionnement :
-   - Le portail demande un code élève existant, le vérifie ici (empreintes SHA-256, comme MathSite et
+   - Le portail demande un code ZF existant, le vérifie ici (empreintes SHA-256, comme MathSite et
      le serveur de RoutineSite), puis ajoute « #fz=<CODE> » aux liens vers les sites.
    - Sur un site, ce script lit « #fz=… », le vérifie, l'efface de l'adresse et garde l'accès sur
      l'appareil (localStorage « famzak:acces », commun aux 6 sites qui ont la même adresse de base).

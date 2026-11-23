@@ -21,7 +21,7 @@
   </div>
   <nav class="nav-links" aria-label="Navigation">
     <a href="#" id="nav-accueil" class="active">Accueil</a>
-    <button type="button" id="nav-quitter" hidden>Changer de code</button>
+    <button type="button" id="nav-quitter" hidden>Changer de code ZF</button>
   </nav>
 </header>
 
@@ -57,9 +57,9 @@ function vignetteHtml(k) {
   return `<section class="vignette">
     <h2>${esc(k.nom)}</h2>
     <p class="niveau">${esc(k.niveau)}</p>
-    <label class="code-label" for="code-${k.key}">Mon code</label>
+    <label class="code-label" for="code-${k.key}">Mon code ZF</label>
     <form class="champ-ligne" onsubmit="entrer('${k.key}'); return false;">
-      <input class="input" id="code-${k.key}" type="text" placeholder="VOTRE CODE" autocomplete="off" autocapitalize="characters" spellcheck="false">
+      <input class="input" id="code-${k.key}" type="text" placeholder="CODE ZF" autocomplete="off" autocapitalize="characters" spellcheck="false">
       <button class="btn" type="submit">Entrer</button>
     </form>
     <p class="erreur" id="erreur-${k.key}" role="alert"></p>
@@ -129,7 +129,7 @@ async function afficher() {
         <section class="vignette vignette--active">
           <div class="espace-barre">
             <h2>Mon espace · ${esc(nomClasse(s.classe))}</h2>
-            <button type="button" class="lien" onclick="sortir()">Changer de code</button>
+            <button type="button" class="lien" onclick="sortir()">Changer de code ZF</button>
           </div>
           <p class="niveau">Deux parcours de 100 séances, 50 heures chacun.</p>
           ${serieHtml(s.code)}
@@ -142,7 +142,7 @@ async function afficher() {
       </div>`;
   } else {
     c.innerHTML = `<h1 class="titre">Routines</h1>
-      <p class="sous-titre">Chaque classe a son espace : entrez votre code dans la vignette de votre classe.</p>
+      <p class="sous-titre">Chaque classe a son espace : entrez votre code ZF dans la vignette de votre classe.</p>
       <div class="vignettes">${CLASSES.map(vignetteHtml).join("")}</div>`;
   }
   if (s) brancherRecherche();
@@ -217,15 +217,15 @@ async function entrer(classe) {
   const err = document.getElementById(`erreur-${classe}`);
   const code = normaliser(input.value);
   if (code.length < 6) {
-    err.textContent = "Le code comporte au moins 6 caractères : saisissez celui qui vous a été remis.";
+    err.textContent = "Le code ZF comporte au moins 6 caractères : saisissez celui qui vous a été remis.";
     input.focus();
     return;
   }
   if (!(await codeValable(classe, code))) {
     const autre = await classeDuCode(code);
     err.textContent = autre
-      ? `Ce code est celui d'un élève de ${nomClasse(autre)} : utilisez la vignette ${nomClasse(autre)}.`
-      : "Ce code ne correspond à aucun élève de cette classe. Vérifiez-le.";
+      ? `Ce code ZF est celui d'un élève de ${nomClasse(autre)} : utilisez la vignette ${nomClasse(autre)}.`
+      : "Ce code ZF ne correspond à aucun élève de cette classe. Vérifiez-le.";
     input.focus();
     return;
   }
