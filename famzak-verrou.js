@@ -116,6 +116,21 @@
   }
   window.FamZakVerrou.demander = demander;
 
+  // Déconnexion (« Changer de code » sur un site ou sur le portail) : efface le code partout.
+  // Les 6 sites partagent leur stockage ; le portail, à une autre adresse, est prévenu par « #fz-sortie ».
+  function effacerTout() {
+    oublier();
+    ["famzak:eleve", "routinesite:code", "famzak:verrou-ouvert"].forEach(function (k) { try { sessionStorage.removeItem(k); } catch (e) {} });
+    try { Object.keys(localStorage).forEach(function (k) { if (k.indexOf("mathsite-code-eleve") === 0) localStorage.removeItem(k); }); } catch (e) {}
+  }
+  function deconnecter() { effacerTout(); cacher(); location.href = PORTAIL + "#fz-sortie"; }
+  window.FamZakVerrou.deconnecter = deconnecter;
+  // Un autre onglet des sites s'est déconnecté : on referme celui-ci aussi.
+  window.addEventListener("storage", function (e) { if (e.key === CLE && !e.newValue && !lire()) location.reload(); });
+
+  // Déconnexion demandée par le portail : on efface ici puis on retourne au portail.
+  if (/(^#|&)fz-sortie(&|$)/.test(location.hash)) { effacerTout(); cacher(); location.replace(PORTAIL + "#fz-sortie"); return; }
+
   // 1. Code transmis dans l'adresse (lien du portail ou d'un autre site) : #fz=CODE, éventuellement après une autre ancre
   var morceaux = location.hash.replace(/^#/, "").split("&");
   var donne = null;
