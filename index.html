@@ -78,6 +78,7 @@ function routineHtml(r, session) {
       <div class="stat"><b>10</b><span>modules</span></div>
       <div class="stat"><b>${esc(r.stats[2][0])}</b><span>niveaux</span></div>
     </div>
+    ${badgesHtml(faits.length)}
     <details>
       <summary>Voir les 10 modules</summary>
       <ol>${r.modules.map(m => `<li>${esc(m)}</li>`).join("")}</ol>
@@ -104,6 +105,7 @@ function paroleHtml(session) {
       <div class="stat"><b>2</b><span>exercices oraux</span></div>
       <div class="stat"><b>Chrome</b><span>micro requis</span></div>
     </div>
+    ${badgesHtml(faits.length)}
     <div class="actions">
       <a class="btn" href="parole.html">Faire ma séance du jour</a>
       <a class="btn btn--secondaire" href="seances.html?r=parole">Les 100 séances</a>
@@ -129,6 +131,7 @@ async function afficher() {
             <button type="button" class="lien" onclick="sortir()">Changer de code</button>
           </div>
           <p class="niveau">Deux parcours de 100 séances, 50 heures chacun.</p>
+          ${serieHtml(s.code)}
           <div class="recherche" role="search">
             <input class="input input--recherche" id="recherche" type="search" placeholder="Chercher dans les 200 séances : loi binomiale, Python, IP…" aria-label="Chercher dans les séances" autocomplete="off" spellcheck="false">
             <div class="resultats" id="resultats" hidden aria-live="polite"></div>

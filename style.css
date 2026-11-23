@@ -131,3 +131,19 @@ details li { padding: 2px 0; break-inside: avoid; }
 .routine details ol { font-size: 13px; columns: 1; }
 .routine select { font-size: 13px; padding: 4px 6px; }
 .routine .jour-choix { gap: 6px; font-size: 13px; }
+
+/* Série de jours d'affilée et badges */
+.serie { display: flex; gap: 12px; align-items: center; background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; padding: 10px 12px; margin: 10px 0; }
+.serie-flamme { min-width: 86px; text-align: center; border-radius: 10px; padding: 6px; background: linear-gradient(160deg, #ff9a3c33, #ff4d4d22); border: 1px solid #ff9a3c88; }
+.serie-flamme b { display: block; font-size: 26px; color: #ffb35c; line-height: 1.1; }
+.serie-flamme b::before { content: "🔥 "; font-size: 18px; }
+.serie-flamme span { font-size: 11px; color: var(--doux); }
+.serie-flamme--eteinte { filter: grayscale(1); opacity: .7; }
+.serie-texte p { margin: 0 0 4px; font-size: 14px; }
+.serie-record { color: var(--doux); font-size: 12px !important; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px dashed var(--bord); color: var(--doux); }
+.badge i { font-style: normal; filter: grayscale(1); opacity: .45; }
+.badge--ok { border-style: solid; border-color: var(--vert); color: var(--texte, inherit); }
+.badge--ok i { filter: none; opacity: 1; }
+@media (max-width: 520px) { .serie { flex-direction: column; align-items: stretch; } }

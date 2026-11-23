@@ -95,7 +95,65 @@ function lireJours(routine, code) {
 function ajouterJour(routine, code, n) {
   const j = lireJours(routine, code);
   if (!j.includes(n)) j.push(n);
+  noterActivite(code);
   try { localStorage.setItem(cleJours(routine, code), JSON.stringify(j.sort((a, b) => a - b))); } catch (e) {}
+}
+
+// ---------- Jours d'affilée et badges ----------
+// Les dates d'activité (un jour de routine fait, quelle que soit la routine) sont gardées sur l'appareil,
+// à part des jours faits : la synchronisation avec le Worker ne les touche pas.
+function cleDates(code) { return `routinesite:dates:${normaliser(code)}`; }
+function dateLocale(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+function lireDates(code) { try { return JSON.parse(localStorage.getItem(cleDates(code))) || []; } catch (e) { return []; } }
+function noterActivite(code) {
+  const d = lireDates(code), auj = dateLocale(new Date());
+  if (d.includes(auj)) return;
+  d.push(auj);
+  try { localStorage.setItem(cleDates(code), JSON.stringify(d.sort().slice(-400))); } catch (e) {}
+}
+// { actuelle, record, aujourdhui } : la série actuelle compte encore si le dernier jour fait est hier.
+function serieJours(code) {
+  const ens = new Set(lireDates(code));
+  const veille = d => { const x = new Date(d); x.setDate(x.getDate() - 1); return x; };
+  let d = new Date(), aujourdhui = ens.has(dateLocale(d));
+  if (!aujourdhui) d = veille(d);
+  let actuelle = 0;
+  while (ens.has(dateLocale(d))) { actuelle++; d = veille(d); }
+  let record = 0, cours = 0, prec = null;
+  [...ens].sort().forEach(t => {
+    const x = new Date(t + "T12:00:00");
+    cours = prec && Math.round((x - prec) / 86400000) === 1 ? cours + 1 : 1;
+    record = Math.max(record, cours); prec = x;
+  });
+  return { actuelle, record: Math.max(record, actuelle), aujourdhui };
+}
+const PALIERS_BADGES = [
+  { n: 1, icone: "🌱", nom: "Premier pas" },
+  { n: 10, icone: "🥉", nom: "10 jours" },
+  { n: 30, icone: "🥈", nom: "30 jours" },
+  { n: 50, icone: "🥇", nom: "Mi-parcours" },
+  { n: 100, icone: "🏆", nom: "100 jours" }
+];
+const PALIERS_SERIE = [{ n: 3, icone: "🔥", nom: "3 jours d'affilée" }, { n: 7, icone: "⚡", nom: "7 jours d'affilée" }, { n: 30, icone: "💎", nom: "30 jours d'affilée" }];
+// Badges d'une routine (nombre de jours faits), gagnés ou à venir.
+function badgesHtml(nbFaits) {
+  return `<div class="badges" aria-label="Badges">${PALIERS_BADGES.map(b => {
+    const ok = nbFaits >= b.n;
+    return `<span class="badge${ok ? " badge--ok" : ""}" title="${esc(b.nom)}${ok ? " : gagné" : ` : encore ${b.n - nbFaits} jour${b.n - nbFaits > 1 ? "s" : ""}`}"><i>${b.icone}</i>${esc(b.nom)}</span>`;
+  }).join("")}</div>`;
+}
+// Bandeau de la série de jours d'affilée (toutes routines confondues).
+function serieHtml(code) {
+  const s = serieJours(code);
+  const prochain = PALIERS_SERIE.find(p => s.record < p.n);
+  const msg = s.actuelle === 0 ? "Fais une séance aujourd'hui pour lancer ta série."
+    : s.aujourdhui ? "Séance du jour faite : bravo, reviens demain pour continuer."
+    : "Fais une séance aujourd'hui pour ne pas casser ta série.";
+  return `<div class="serie">
+    <div class="serie-flamme${s.actuelle ? "" : " serie-flamme--eteinte"}"><b>${s.actuelle}</b><span>jour${s.actuelle > 1 ? "s" : ""} d'affilée</span></div>
+    <div class="serie-texte"><p>${esc(msg)}</p><p class="serie-record">Record : ${s.record} jour${s.record > 1 ? "s" : ""}${prochain ? ` · prochain badge à ${prochain.n} jours d'affilée` : ""}</p>
+    <div class="badges">${PALIERS_SERIE.map(p => `<span class="badge${s.record >= p.n ? " badge--ok" : ""}" title="${esc(p.nom)}"><i>${p.icone}</i>${esc(p.nom)}</span>`).join("")}</div></div>
+  </div>`;
 }
 
 // ---------- Suivi des jours (Worker « routinesite-suivi ») ----------
