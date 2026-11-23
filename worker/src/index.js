@@ -1,4 +1,4 @@
-// Version : 1.4 (séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
+// Version : 1.5 (réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
 // Worker « routinesite-suivi » : suivi des jours faits par élève pour RoutineSite.
 //
 // Routes (toutes en POST, JSON) :
@@ -20,6 +20,15 @@
 //   /parole/analyser    { classe, code, jour, seance }            -> relance l'analyse automatique d'une séance (échec ou blocage)
 //   /admin/parole/analyser { motdepasse, cle }                    -> relance l'analyse d'une séance (sans plafond)
 //
+// Probabilités et Technologie numérique (réponses écrites, corrigées par Claude) :
+//   /reponses/envoyer   { classe, code, routine, jour, envoi, reponses[] } -> enregistre un envoi, valide le jour et le dépose
+//                        dans le dépôt privé (reponses/…json) : ce dépôt lance la GitHub Action qui fait corriger l'envoi par Claude
+//   /reponses/etat      { classe, code, routine?, jour? }     -> envois de l'élève, avec leur correction quand elle est prête
+//   /admin/reponses     { motdepasse }                        -> tous les envois (la correction prête est récupérée au passage)
+//   /admin/reponses/modifier { motdepasse, cle, note, texte } -> l'enseignant corrige ou valide la correction affichée à l'élève
+//   /admin/reponses/relancer { motdepasse, cle }              -> redemande une correction à Claude
+//   /admin/reponses/supprimer { motdepasse, cle }             -> supprime un envoi du suivi
+//
 // Analyse automatique : lancée après chaque enregistrement de séance (en arrière-plan) avec Cloudflare Workers AI
 // (binding « AI » dans wrangler.toml, gratuit dans la franchise quotidienne, aucune clé) : un modèle de langage juge les critères
 // « jugés » et rédige le retour, un modèle d'embeddings recoupe la pertinence des liens. Voir analyse.js.
@@ -30,6 +39,7 @@
 // Secret : ADMIN_PASSWORD (le même mot de passe enseignant que MathSite).
 // Stockage KV « SUIVI » : clé  fait:<empreinte>:<routine>:<jour>  ->  { code, classe, date }
 //                        clé  parole:<empreinte>:<jour>:<séance>  ->  { code, classe, jour, seance, date, maj, bilan, ex1, ex2, notes, retour }
+//                        clé  rep:<empreinte>:<routine>:<jour>:<envoi>  ->  { code, classe, routine, jour, envoi, date, reponses, statut, chemin, correction }
 
 import { CRITERES, analyserSeance, signature } from "./analyse.js";
 
@@ -73,6 +83,12 @@ export default {
       if (chemin === "/admin/parole/noter") return await adminParoleNoter(env, request, corps, cors);
       if (chemin === "/admin/parole/analyser") return await adminParoleAnalyser(env, ctx, request, corps, cors);
       if (chemin === "/admin/parole/supprimer") return await adminParoleSupprimer(env, request, corps, cors);
+      if (chemin === "/reponses/envoyer") return await reponsesEnvoyer(env, corps, cors);
+      if (chemin === "/reponses/etat") return await reponsesEtat(env, corps, cors);
+      if (chemin === "/admin/reponses") return await adminReponses(env, request, corps, cors);
+      if (chemin === "/admin/reponses/modifier") return await adminReponsesModifier(env, request, corps, cors);
+      if (chemin === "/admin/reponses/relancer") return await adminReponsesRelancer(env, request, corps, cors);
+      if (chemin === "/admin/reponses/supprimer") return await adminReponsesSupprimer(env, request, corps, cors);
     } catch (e) {
       return json({ erreur: "Erreur du serveur" }, 500, cors);
     }
@@ -495,6 +511,209 @@ async function adminParoleSupprimer(env, request, c, cors) {
   const existe = !!(await env.SUIVI.get(c.cle));
   if (existe) await env.SUIVI.delete(c.cle);
   return json({ ok: true, supprimees: existe ? 1 : 0 }, 200, cors);
+}
+
+// ---------- Probabilités et Technologie : réponses écrites corrigées par Claude ----------
+// L'élève envoie ses réponses ; le Worker les enregistre (KV) et les dépose UNE fois dans le dépôt privé
+// (reponses/<classe>/<CODE>/<routine>/jour-NNN/<envoi>.json). Ce dépôt contient la GitHub Action qui fait corriger
+// chaque envoi par Claude (abonnement de l'enseignant) et écrit corrections/<même chemin>. Le Worker va chercher
+// cette correction quand l'élève (ou l'enseignant) consulte ses envois.
+const ROUTINES_ECRITES = ["probabilites", "technologie"];
+const CLE_REPONSE = /^rep:[0-9a-f]{64}:(probabilites|technologie):\d{1,3}:\d{10,14}$/;
+const MAX_ENVOIS_JOUR = 20;               // envois par élève et par jour calendaire (protège le quota Claude)
+const MAX_REPONSE = 3000;                 // caractères par réponse
+const ATTENTE_VERIF_MS = 15000;           // délai minimal entre deux recherches de la correction dans le dépôt
+const RETARD_MS = 30 * 60 * 1000;         // au-delà, la correction est signalée « en retard »
+const VERDICTS = ["juste", "partiel", "faux", "vide"];
+
+const cheminEnvoi = v => `reponses/${v.classe}/${v.code}/${v.routine}/jour-${String(v.jour).padStart(3, "0")}/${v.envoi}.json`;
+const cheminCorrection = v => "corrections/" + cheminEnvoi(v).slice("reponses/".length);
+const depuisBase64 = b => { const bin = atob(String(b).replace(/\s/g, "")); return new TextDecoder().decode(Uint8Array.from(bin, ch => ch.charCodeAt(0))); };
+
+async function deposerEnvoi(env, depot, v, relance = 0) {
+  const chemin = cheminEnvoi(v);
+  const contenu = JSON.stringify({ classe: v.classe, code: v.code, routine: v.routine, jour: v.jour, envoi: v.envoi, essai: v.essai, date: v.date, relance, reponses: v.reponses }, null, 2);
+  let sha;
+  if (relance) {                          // relance : on met à jour le fichier (nouveau commit, donc nouvelle correction)
+    const r0 = await appelGitHub(env, "GET", `/repos/${depot}/contents/${chemin}${parametreBranche(env)}`);
+    if (r0.ok) sha = (await r0.json().catch(() => ({}))).sha;
+  }
+  const r = await appelGitHub(env, "PUT", `/repos/${depot}/contents/${chemin}`, {
+    message: `Réponses ${v.code} ${v.routine} jour ${v.jour} (envoi ${v.envoi}${relance ? `, relance ${relance}` : ""})`,
+    content: versBase64(contenu), ...(sha ? { sha } : {}), ...(env.AUDIO_BRANCH ? { branch: env.AUDIO_BRANCH } : {})
+  });
+  if (r.ok) return { ok: true, chemin };
+  if (r.status === 422 && !relance) return { ok: true, chemin, dejaLa: true };   // fichier déjà déposé : pas de second dépôt, pas de seconde correction
+  return { ok: false, statut: r.status };
+}
+
+function correctionValide(o, nbExercices) {
+  if (!o || typeof o !== "object") return null;
+  const questions = Array.isArray(o.questions) ? o.questions.slice(0, 40).map(q => ({
+    exercice: Math.min(nbExercices || 3, Math.max(1, parseInt(q && q.exercice, 10) || 1)),
+    question: texteBorne(String((q && q.question) ?? ""), 10),
+    verdict: VERDICTS.includes(q && q.verdict) ? q.verdict : "faux",
+    commentaire: texteBorne(q && q.commentaire, 400)
+  })) : [];
+  const total = Number.isInteger(o.total) && o.total > 0 ? Math.min(o.total, 60) : questions.length;
+  const justes = nombreOuNull(o.justes);
+  return {
+    justes: justes === null ? questions.filter(q => q.verdict === "juste").length : Math.min(total, Math.max(0, justes)),
+    total, questions, texte: texteBorne(o.texte, 12000),
+    aVerifier: texteBorne(o.aVerifier, 1000), modele: texteBorne(o.modele, 60)
+  };
+}
+
+// Va chercher dans le dépôt privé la correction d'un envoi en attente ; met à jour le KV si elle est arrivée.
+async function recupererCorrection(env, cle, v, force = false) {
+  if (v.statut !== "en_cours") return v;
+  const maintenant = Date.now();
+  if (!force && v.verifieLe && maintenant - Date.parse(v.verifieLe) < ATTENTE_VERIF_MS) return v;
+  const depot = env.AUDIO_REPO || "";
+  if (!env.GITHUB_TOKEN || !/^[\w.-]+\/[\w.-]+$/.test(depot)) return v;
+  v.verifieLe = new Date(maintenant).toISOString();
+  try {
+    const r = await appelGitHub(env, "GET", `/repos/${depot}/contents/${cheminCorrection(v)}${parametreBranche(env)}`);
+    if (r.ok) {
+      const d = JSON.parse(depuisBase64((await r.json()).content || ""));
+      if ((Number(d.relance) || 0) >= (v.relance || 0)) {
+        if (d.statut === "echec") { v.statut = "echec"; v.erreur = texteBorne(d.erreur, 300); }
+        else {
+          const c = correctionValide(d.correction, v.reponses.length);
+          if (c && c.texte) { v.statut = "corrige"; v.correctionAuto = c; v.correction = { justes: c.justes, total: c.total, texte: c.texte, questions: c.questions }; v.corrigeLe = d.date || new Date().toISOString(); }
+          else { v.statut = "echec"; v.erreur = "Correction illisible"; }
+        }
+      }
+    }
+  } catch (e) { /* on réessaiera à la prochaine consultation */ }
+  await env.SUIVI.put(cle, JSON.stringify(v));
+  return v;
+}
+
+function vueEleve(v, cle) {
+  const enRetard = v.statut === "en_cours" && Date.now() - Date.parse(v.attenteDepuis || v.date) > RETARD_MS;
+  return { cle, routine: v.routine, jour: v.jour, envoi: v.envoi, essai: v.essai, date: v.date, reponses: v.reponses,
+    statut: enRetard ? "en_retard" : v.statut, correction: v.statut === "corrige" ? v.correction : null, valide: !!v.valideLe };
+}
+
+async function reponsesEnvoyer(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  if (!ROUTINES_ECRITES.includes(c.routine)) return json({ erreur: "Routine inconnue" }, 400, cors);
+  const jour = Number(c.jour);
+  if (!Number.isInteger(jour) || jour < 1 || jour > 100) return json({ erreur: "Jour invalide" }, 400, cors);
+  if (typeof c.envoi !== "string" || !/^\d{10,14}$/.test(c.envoi)) return json({ erreur: "Envoi invalide" }, 400, cors);
+  if (!Array.isArray(c.reponses) || c.reponses.length < 1 || c.reponses.length > 6) return json({ erreur: "Réponses invalides" }, 400, cors);
+  const reponses = c.reponses.map(x => texteBorne(typeof x === "string" ? x : (x && x.texte), MAX_REPONSE).trim());
+  if (reponses.some(x => !x)) return json({ erreur: "Réponds à tous les exercices avant d'envoyer" }, 400, cors);
+
+  const cle = `rep:${eleve.empreinte}:${c.routine}:${jour}:${c.envoi}`;
+  const existant = JSON.parse((await env.SUIVI.get(cle)) || "null");
+  if (existant) return json({ ok: true, deja: true, envoi: vueEleve(existant, cle) }, 200, cors);   // même envoi renvoyé (double clic, réseau) : rien de plus
+
+  const aujourdhui = new Date().toISOString().slice(0, 10);
+  const cleQuota = `envois:${eleve.empreinte}:${aujourdhui}`;
+  const nbJour = Number(await env.SUIVI.get(cleQuota)) || 0;
+  if (nbJour >= MAX_ENVOIS_JOUR) return json({ erreur: "Tu as fait beaucoup d'envois aujourd'hui : réessaie demain" }, 429, cors);
+  await env.SUIVI.put(cleQuota, String(nbJour + 1), { expirationTtl: 172800 });
+
+  const essai = (await toutesLesCles(env, `rep:${eleve.empreinte}:${c.routine}:${jour}:`)).length + 1;
+  const v = { code: eleve.code, classe: c.classe, routine: c.routine, jour, envoi: c.envoi, essai, date: new Date().toISOString(), reponses, statut: "en_cours", relance: 0 };
+
+  // Le jour compte comme fait dès l'envoi (comme avec l'e-mail).
+  const cleFait = `fait:${eleve.empreinte}:${c.routine}:${jour}`;
+  if (!(await env.SUIVI.get(cleFait))) await env.SUIVI.put(cleFait, JSON.stringify({ code: eleve.code, classe: c.classe, date: v.date }));
+
+  const a = await archiveUtilisable(env, cors);
+  if (a.refus) { v.statut = "non_configure"; }
+  else {
+    const d = await deposerEnvoi(env, a.depot, v);
+    if (d.ok) v.chemin = d.chemin;
+    else { v.statut = "echec_depot"; v.erreur = `GitHub ${d.statut}`; }
+  }
+  await env.SUIVI.put(cle, JSON.stringify(v));
+  return json({ ok: true, envoi: vueEleve(v, cle) }, 200, cors);
+}
+
+async function reponsesEtat(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  let prefixe = `rep:${eleve.empreinte}:`;
+  if (c.routine !== undefined) {
+    if (!ROUTINES_ECRITES.includes(c.routine)) return json({ erreur: "Routine inconnue" }, 400, cors);
+    prefixe += `${c.routine}:`;
+    if (c.jour !== undefined) {
+      const jour = Number(c.jour);
+      if (!Number.isInteger(jour) || jour < 1 || jour > 100) return json({ erreur: "Jour invalide" }, 400, cors);
+      prefixe += `${jour}:`;
+    }
+  }
+  const envois = [];
+  for (const cle of await toutesLesCles(env, prefixe)) {
+    let v = JSON.parse((await env.SUIVI.get(cle)) || "null");
+    if (!v) continue;
+    v = await recupererCorrection(env, cle, v);
+    envois.push(vueEleve(v, cle));
+  }
+  envois.sort((x, y) => String(x.date).localeCompare(String(y.date)));
+  return json({ ok: true, envois }, 200, cors);
+}
+
+async function adminReponses(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  const envois = [];
+  for (const cle of await toutesLesCles(env, "rep:")) {
+    let v = JSON.parse((await env.SUIVI.get(cle)) || "null");
+    if (!v) continue;
+    v = await recupererCorrection(env, cle, v);
+    envois.push({ cle, ...v });
+  }
+  envois.sort((x, y) => String(x.date).localeCompare(String(y.date)));
+  return json({ ok: true, envois }, 200, cors);
+}
+
+async function adminReponsesModifier(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  if (typeof c.cle !== "string" || !CLE_REPONSE.test(c.cle)) return json({ erreur: "Envoi invalide" }, 400, cors);
+  const v = JSON.parse((await env.SUIVI.get(c.cle)) || "null");
+  if (!v) return json({ erreur: "Envoi introuvable" }, 404, cors);
+  const texte = texteBorne(c.texte, 12000).trim();
+  if (!texte) return json({ erreur: "Le texte de correction est vide" }, 400, cors);
+  const total = Number.isInteger(Number(c.total)) && Number(c.total) > 0 ? Math.min(60, Number(c.total)) : ((v.correction && v.correction.total) || 0);
+  const justes = nombreOuNull(c.justes);
+  v.correction = { ...(v.correction || {}), texte, total, justes: justes === null ? ((v.correction && v.correction.justes) || 0) : Math.min(total, Math.max(0, justes)) };
+  v.statut = "corrige";
+  v.valideLe = new Date().toISOString();
+  await env.SUIVI.put(c.cle, JSON.stringify(v));
+  return json({ ok: true, correction: v.correction }, 200, cors);
+}
+
+async function adminReponsesRelancer(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  if (typeof c.cle !== "string" || !CLE_REPONSE.test(c.cle)) return json({ erreur: "Envoi invalide" }, 400, cors);
+  const v = JSON.parse((await env.SUIVI.get(c.cle)) || "null");
+  if (!v) return json({ erreur: "Envoi introuvable" }, 404, cors);
+  const a = await archiveUtilisable(env, cors);
+  if (a.refus) return a.refus;
+  const relance = (v.relance || 0) + 1;
+  const d = await deposerEnvoi(env, a.depot, v, relance);
+  if (!d.ok) return json({ erreur: `Dépôt privé : refus de GitHub (${d.statut})` }, 502, cors);
+  Object.assign(v, { relance, statut: "en_cours", chemin: d.chemin, attenteDepuis: new Date().toISOString() });
+  delete v.erreur; delete v.verifieLe;
+  await env.SUIVI.put(c.cle, JSON.stringify(v));
+  return json({ ok: true, statut: v.statut }, 200, cors);
+}
+
+async function adminReponsesSupprimer(env, request, c, cors) {
+  const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
+  if (refus) return refus;
+  if (typeof c.cle !== "string" || !CLE_REPONSE.test(c.cle)) return json({ erreur: "Envoi invalide" }, 400, cors);
+  const existe = !!(await env.SUIVI.get(c.cle));
+  if (existe) await env.SUIVI.delete(c.cle);
+  return json({ ok: true, supprimes: existe ? 1 : 0 }, 200, cors);
 }
 
 // Mot de passe enseignant : comparé par empreinte ; blocage temporaire après trop d'échecs.
