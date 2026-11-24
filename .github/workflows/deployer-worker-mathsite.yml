@@ -1,0 +1,27 @@
+# Publie le Worker « mathsite-formulaires » (formulaires et e-mails de MathSite) depuis le dépôt MathSite,
+# avec les secrets Cloudflare de ce dépôt (même compte Cloudflare). Remplace « npx wrangler deploy » sur l'ordinateur.
+# Lancer : onglet Actions de RoutineSite > « Déployer le Worker MathSite » > Run workflow (ou modifier ce fichier).
+# Les secrets du Worker MathSite (GITHUB_TOKEN, TURNSTILE_SECRET, BREVO_API_KEY…) restent dans Cloudflare : on n'y touche pas.
+name: Déployer le Worker MathSite
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/deployer-worker-mathsite.yml"]
+  workflow_dispatch:
+jobs:
+  deployer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: MikHub-dev/MathSite
+          ref: main
+          sparse-checkout: worker
+      - name: Tests
+        run: node worker/test/worker.test.mjs
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
+          command: deploy --keep-vars
