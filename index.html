@@ -25,9 +25,28 @@
   </nav>
 </header>
 
+<section class="s3d" aria-label="Trois routines : probabilités, technologie, discours">
+<h1 class="s3d-cache">RoutineSite</h1>
+<div class="s3d-scenes">
+<div class="s3d-scene s3d-b"><svg viewBox="0 0 360 360" data-3d="probas"><defs><filter id="rGlow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+<circle cx="180" cy="180" r="150" fill="rgba(122,162,255,.06)" stroke="#7aa2ff" stroke-width="3" filter="url(#rGlow)"/>
+<circle cx="180" cy="180" r="138" fill="none" stroke="#7aa2ff" stroke-opacity=".3" stroke-dasharray="2 6"/>
+<g font-family="ui-monospace,Menlo,monospace" font-size="10.5" fill="#7aa2ff" opacity=".8"><text x="48" y="70" transform="rotate(-40 48 70)">P(A) = k / n</text><text x="262" y="62" transform="rotate(38 262 62)">E(X) = np</text><text x="318" y="214" transform="rotate(82 318 214)">σ² = np(1−p)</text><text x="22" y="214" transform="rotate(-82 22 214)">Ω = {1,…,6}</text></g></svg><div class="s3d-k">LES PROBABILITÉS</div><span class="s3d-dot"></span><div class="s3d-v">apprivoisent le hasard.</div></div>
+<div class="s3d-scene s3d-g"><svg viewBox="0 0 360 360" data-3d="techno"><defs><filter id="rGlow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+<circle cx="180" cy="180" r="150" fill="rgba(95,201,138,.06)" stroke="#5fc98a" stroke-width="3" filter="url(#rGlow)"/>
+<circle cx="180" cy="180" r="138" fill="none" stroke="#5fc98a" stroke-opacity=".3" stroke-dasharray="2 6"/>
+<g font-family="ui-monospace,Menlo,monospace" font-size="10.5" fill="#5fc98a" opacity=".8"><text x="40" y="84" transform="rotate(-42 40 84)">for i in range(8):</text><text x="258" y="60" transform="rotate(38 258 60)">192.168.0.1</text><text x="318" y="206" transform="rotate(82 318 206)">0b1011 = 11</text><text x="22" y="210" transform="rotate(-82 22 210)">def main():</text></g></svg><div class="s3d-k">LA TECHNOLOGIE</div><span class="s3d-dot"></span><div class="s3d-v">ouvre la machine.</div></div>
+<div class="s3d-scene s3d-r"><svg viewBox="0 0 360 360" data-3d="orateur"><defs><filter id="rGlow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+<circle cx="180" cy="180" r="150" fill="rgba(255,107,107,.06)" stroke="#ff6b6b" stroke-width="3" filter="url(#rGlow)"/>
+<circle cx="180" cy="180" r="138" fill="none" stroke="#ff6b6b" stroke-opacity=".3" stroke-dasharray="2 6"/>
+<g font-family="ui-monospace,Menlo,monospace" font-size="10.5" fill="#ff6b6b" opacity=".8"><text x="40" y="80" transform="rotate(-42 40 80)">150 mots / min</text><text x="262" y="62" transform="rotate(38 262 62)">pause 0,5 s</text><text x="320" y="190" transform="rotate(82 320 190)">regarder la salle</text><text x="22" y="226" transform="rotate(-82 22 226)">2 min sans notes</text></g></svg><div class="s3d-k">LE DISCOURS</div><span class="s3d-dot"></span><div class="s3d-v">porte la voix.</div></div>
+</div>
+</section>
+
 <main class="page" id="contenu"></main>
 
 <script src="commun.js"></script>
+<script src="accueil-3d.js?v=1" defer></script>
 <script>
 const ROUTINES = [
   {
@@ -123,8 +142,7 @@ async function afficher() {
   quitter.hidden = !s;
   if (s) await synchroniserJours(s);
   if (s) {
-    c.innerHTML = `<h1 class="titre">Routines</h1>
-      <p class="sous-titre">Un rituel de 30 minutes par jour : ≈ 12 min d'apprentissage, puis 3 exercices corrigés.</p>
+    c.innerHTML = `<p class="sous-titre">Un rituel de 30 minutes par jour : ≈ 12 min d'apprentissage, puis 3 exercices corrigés.</p>
       <div class="vignettes vignettes--une">
         <section class="vignette vignette--active">
           <div class="espace-barre">
@@ -141,8 +159,7 @@ async function afficher() {
         </section>
       </div>`;
   } else {
-    c.innerHTML = `<h1 class="titre">Routines</h1>
-      <p class="sous-titre">Chaque classe a son espace : entrez votre code ZF dans la vignette de votre classe.</p>
+    c.innerHTML = `<p class="sous-titre">Chaque classe a son espace : entrez votre code ZF dans la vignette de votre classe.</p>
       <div class="vignettes">${CLASSES.map(vignetteHtml).join("")}</div>`;
   }
   if (s) brancherRecherche();

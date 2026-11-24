@@ -147,3 +147,15 @@ details li { padding: 2px 0; break-inside: avoid; }
 .badge--ok { border-style: solid; border-color: var(--vert); color: var(--texte, inherit); }
 .badge--ok i { filter: none; opacity: 1; }
 @media (max-width: 520px) { .serie { flex-direction: column; align-items: stretch; } }
+
+/* ---------- Accueil : les 3 scènes en 3D (accueil-3d.js) ---------- */
+.s3d { padding: 26px 24px 6px; background: radial-gradient(800px 500px at 20% 20%, rgba(122,162,255,.10), transparent 70%), radial-gradient(700px 500px at 85% 70%, rgba(255,107,107,.08), transparent 70%); }
+.s3d-cache { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.s3d-scenes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 1200px; margin: 0 auto; }
+.s3d-scene { text-align: center; }
+.s3d-scene svg { width: 100%; max-width: 340px; height: auto; user-select: none; }
+.s3d-k { letter-spacing: 5px; font-weight: 600; font-size: 1rem; margin-top: 6px; }
+.s3d-dot { display: block; width: 90px; height: 1px; margin: 10px auto; background: linear-gradient(90deg, transparent, currentColor, transparent); opacity: .7; }
+.s3d-v { font-size: 1.5rem; font-weight: 300; }
+.s3d-b { color: var(--bleu); } .s3d-g { color: var(--vert); } .s3d-r { color: var(--rouge); }
+@media (max-width: 900px) { .s3d-scenes { grid-template-columns: 1fr; } .s3d-scene svg { max-width: 300px; } }
