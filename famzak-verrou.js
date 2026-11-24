@@ -1,21 +1,26 @@
-/* famzak-verrou.js — verrou simple (code ZF) des sites FamZakSites (v1.1).
+/* famzak-verrou.js — verrou simple (code ZF) des sites FamZakSites (v1.2).
    Un seul fichier, servi par RoutineSite, chargé en tête de chaque page des 6 sites :
      <script src="https://mikhub-dev.github.io/RoutineSite/famzak-verrou.js"></script>
    et par le portail https://famzak.github.io/ avec data-portail="oui" (il n'y sert qu'à vérifier les codes).
 
    Fonctionnement :
-   - Le portail demande un code ZF existant, le vérifie ici (empreintes SHA-256, comme MathSite et
-     le serveur de RoutineSite), puis ajoute « #fz=<CODE> » aux liens vers les sites.
-   - Sur un site, ce script lit « #fz=… », le vérifie, l'efface de l'adresse et garde l'accès sur
-     l'appareil (localStorage « famzak:acces », commun aux 6 sites qui ont la même adresse de base).
+   - Le portail demande un code ZF existant et le vérifie ici (empreintes SHA-256, comme MathSite et
+     le serveur de RoutineSite).
+   - Passage portail ⇄ sites (deux adresses différentes, qui ne partagent pas leur stockage) : le code ZF
+     n'est JAMAIS mis dans un lien (v1.2). Les liens restent propres ; au clic, on demande au serveur de
+     RoutineSite un jeton chiffré valable 5 minutes, ajouté à l'adresse (« #fz=j.<jeton> »). La page
+     d'arrivée échange ce jeton contre l'accès, puis l'efface de l'adresse. Serveur injoignable : on
+     part sans jeton et la page d'arrivée demande le code ZF.
+   - Sur un site, l'accès est gardé sur l'appareil (localStorage « famzak:acces », commun aux 6 sites
+     qui ont la même adresse de base).
    - Sans accès valable, la page reste cachée et demande le code ZF elle-même : un code donné sur
-     n'importe lequel des 6 sites ou sur le portail ouvre tous les autres. Les liens vers le portail
-     reçoivent « #fz=CODE » (le portail est à une autre adresse et ne voit pas le stockage des sites).
+     n'importe lequel des 6 sites ou sur le portail ouvre tous les autres (jeton au clic vers le portail).
    - Si ce fichier ne se charge pas, l'attribut onerror de la balise cache la page (verrou fermé).
    - Le code ouvre aussi la session de progression (famzak:eleve) et celle de RoutineSite.
    Limites (verrou simple) : tout se passe dans le navigateur. Les fichiers (PDF, images) restent
    accessibles par leur adresse directe, et quelqu'un qui lit le code de la page peut contourner le verrou.
-   Pas de serveur nécessaire : le verrou marche même si le serveur de RoutineSite ne répond pas.
+   La vérification du code se fait sans serveur ; seul le passage d'une adresse à l'autre sans retaper
+   le code a besoin du serveur de RoutineSite.
    Ajouter un code : ajouter son empreinte ci-dessous (sel + classe + ":" + CODE, en SHA-256),
    dans RoutineSite/commun.js et dans worker/wrangler.toml (EMPREINTES), et son prénom chiffré (PRENOMS).
    Affichage (v1.1) : les sites montrent le prénom, jamais le code ZF. Les prénoms sont rangés sous l'empreinte,
@@ -24,6 +29,8 @@
 (function () {
   "use strict";
   var PORTAIL = "https://famzak.github.io/";
+  var SITES = "https://mikhub-dev.github.io/";
+  var SERVEUR = "https://routinesite-suivi.mikhub-dev.workers.dev";
   var SEL = "mathsite:";
   var EMPREINTES = {
     "5e": ["489c1aecd78964bf6e285c1425430f40b6a14f6cc4ba1f9ffd2bc2f48b203a24"],
@@ -94,7 +101,69 @@
     var a = lire();
     if (a && !a.prenom) dechiffrer(a.h, a.code).then(function (p) { if (p) { a.prenom = p; ecrire(a); } });
   })();
-  window.FamZakVerrou = { verifier: verifier, lire: lire, ecrire: ecrire, oublier: oublier, prenom: prenom, nom: nom, PORTAIL: PORTAIL };
+  // ---------- Passage d'une adresse à l'autre par jeton (le code ZF n'apparaît dans aucun lien) ----------
+  function serveur(route, corps) {
+    var ctl = window.AbortController ? new AbortController() : null;
+    var t = ctl ? setTimeout(function () { ctl.abort(); }, 5000) : 0;
+    return fetch(SERVEUR + route, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps), signal: ctl ? ctl.signal : undefined })
+      .then(function (r) { clearTimeout(t); return r.ok ? r.json() : null; }, function () { clearTimeout(t); return null; });
+  }
+  function jeton(a) { return serveur("/fz/jeton", { classe: a.classe, code: a.code }).then(function (d) { return d && d.jeton ? d.jeton : null; }); }
+  // Jeton reçu dans l'adresse -> accès { classe, code, h, prenom } (null si expiré ou refusé)
+  function ouvrirJeton(j) {
+    return serveur("/fz/ouvrir", { jeton: j }).then(function (d) { return d && d.code ? verifier(d.code) : null; });
+  }
+  function avecJeton(url, j) {
+    if (!j) return url;
+    return url + (url.indexOf("#") >= 0 ? "&" : "#") + "fz=j." + encodeURIComponent(j);
+  }
+  // Va à url (autre adresse) en y joignant un jeton ; fenetre : onglet déjà ouvert (clic « nouvel onglet »).
+  function aller(url, a, fenetre, remplacer) {
+    var cible = fenetre || window;
+    return jeton(a).then(function (j) {
+      var u = avecJeton(url, j);
+      if (remplacer && !fenetre) location.replace(u); else cible.location.href = u;
+    });
+  }
+  // Liens vers l'autre adresse (debut = PORTAIL ou SITES) : propres au survol, jeton ajouté au clic.
+  function relier(debut, acces) {
+    function lien(e) {
+      var l = e.target && e.target.closest && e.target.closest("a[href]");
+      if (!l || e.defaultPrevented) return null;
+      var h = l.href || "";
+      if (h.indexOf(debut) !== 0 || /[#&]fz=/.test(h)) return null;
+      return l;
+    }
+    function suivre(e, nouvelOnglet) {
+      var l = lien(e), a = l && acces();
+      if (!l || !a) return;
+      e.preventDefault();
+      var f = null;
+      if (nouvelOnglet) { try { f = window.open("", "_blank"); if (f) f.opener = null; } catch (x) { f = null; } if (!f) return void (location.href = l.href); }
+      aller(l.href, a, f);
+    }
+    document.addEventListener("click", function (e) {
+      if (e.button !== 0) return;
+      var l = lien(e); if (!l) return;
+      suivre(e, e.ctrlKey || e.metaKey || e.shiftKey || l.target === "_blank");
+    });
+    document.addEventListener("auxclick", function (e) { if (e.button === 1) suivre(e, true); });
+  }
+  // Lit « #fz=… » dans l'adresse et l'efface. Renvoie une promesse : accès, ou null ; undefined s'il n'y en a pas.
+  function lireAdresse() {
+    var donne = null;
+    var morceaux = location.hash.replace(/^#/, "").split("&").filter(function (p) {
+      if (/^fz=/.test(p)) { donne = decodeURIComponent(p.slice(3)); return false; } return p !== "";
+    });
+    if (donne === null) return undefined;
+    var reste = morceaux.join("&");
+    try { history.replaceState(history.state, "", location.pathname + location.search + (reste ? "#" + reste : "")); } catch (e) {}
+    if (/^j\./.test(donne)) return ouvrirJeton(donne.slice(2));
+    return verifier(donne);          // ancien format (code en clair), accepté le temps que les pages en cache se renouvellent
+  }
+
+  window.FamZakVerrou = { verifier: verifier, lire: lire, ecrire: ecrire, oublier: oublier, prenom: prenom, nom: nom,
+    aller: aller, relier: relier, lireAdresse: lireAdresse, PORTAIL: PORTAIL, SITES: SITES };
 
   var moi = document.currentScript;
   if (moi && moi.dataset.portail === "oui") return;          // portail : seulement la vérification
@@ -113,16 +182,8 @@
   function montrer() { document.documentElement.style.visibility = ""; }
   function quandPret(f) { if (document.body) f(); else document.addEventListener("DOMContentLoaded", f); }
 
-  // Liens vers le portail (autre adresse) : on y joint le code, pour qu'il n'ait pas à être redemandé.
-  function relierPortail(a) {
-    function ajouter(l) {
-      var h = l.getAttribute("href") || "";
-      if (h.indexOf(PORTAIL) !== 0 || /[#&]fz=/.test(h)) return;
-      l.setAttribute("href", h + (h.indexOf("#") >= 0 ? "&" : "#") + "fz=" + encodeURIComponent(a.code));
-    }
-    quandPret(function () { Array.prototype.forEach.call(document.querySelectorAll("a[href^='" + PORTAIL + "']"), ajouter); });
-    document.addEventListener("click", function (e) { var l = e.target && e.target.closest && e.target.closest("a[href]"); if (l) ajouter(l); }, true);
-  }
+  // Liens vers le portail (autre adresse) : un jeton est joint au clic, pour que le code n'ait pas à être redemandé.
+  function relierPortail() { relier(PORTAIL, lire); }
 
   // Fenêtre « Code ZF » posée sur la page, qui reste cachée tant que le code n'est pas bon.
   function demander(message) {
@@ -171,23 +232,21 @@
   // Déconnexion demandée par le portail : on efface ici puis on retourne au portail.
   if (/(^#|&)fz-sortie(&|$)/.test(location.hash)) { effacerTout(); cacher(); location.replace(PORTAIL + "#fz-sortie"); return; }
 
-  // 1. Code transmis dans l'adresse (lien du portail ou d'un autre site) : #fz=CODE, éventuellement après une autre ancre
-  var morceaux = location.hash.replace(/^#/, "").split("&");
-  var donne = null;
-  morceaux = morceaux.filter(function (p) { if (/^fz=/.test(p)) { donne = decodeURIComponent(p.slice(3)); return false; } return p !== ""; });
-  if (donne !== null) {
-    var reste = morceaux.join("&");
-    try { history.replaceState(history.state, "", location.pathname + location.search + (reste ? "#" + reste : "")); } catch (e) {}
+  // 1. Accès transmis dans l'adresse par le portail : #fz=j.<jeton>, éventuellement après une autre ancre
+  var recu = lireAdresse();
+  if (recu !== undefined) {
     cacher();
-    verifier(donne).then(function (a) {
-      if (!a) { var deja = lire(); if (deja) { relierPortail(deja); return montrer(); } return demander("Ce code ZF n'existe pas."); }
-      ecrire(a); sessions(a, true); relierPortail(a); montrer();
+    recu.then(function (a) {
+      if (!a) { var deja = lire(); if (deja) { relierPortail(); return montrer(); } return demander("Lien expiré : entre ton code ZF."); }
+      // Accès reçu : on recharge (l'adresse est déjà nettoyée) pour que les scripts de la page, déjà lancés
+      // pendant l'échange du jeton, démarrent avec la session ouverte.
+      ecrire(a); sessions(a, true); location.reload();
     }, function () { demander(); });
     return;
   }
   // 2. Code déjà donné sur l'un des sites ou sur le portail (gardé sur l'appareil)
   var a = lire();
-  if (a) { sessions(a, false); relierPortail(a); return; }
+  if (a) { sessions(a, false); relierPortail(); return; }
   // 3. Sinon : la page reste cachée et demande le code ZF
   demander();
 })();
