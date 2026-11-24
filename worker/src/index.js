@@ -1,4 +1,4 @@
-// Version : 1.7 (les réponses de l'espace enseignant portent le prénom de l'élève, « prenom », à afficher à la place du code ZF ; 1.6 : progression des jeux des 6 sites FamZakSites liée au code ZF ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
+// Version : 1.8 (jetons de passage /fz/jeton et /fz/ouvrir : le code ZF ne passe plus dans les liens entre le portail et les sites ; 1.7 : les réponses de l'espace enseignant portent le prénom de l'élève, « prenom », à afficher à la place du code ZF ; 1.6 : progression des jeux des 6 sites FamZakSites liée au code ZF ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
 // Worker « routinesite-suivi » : suivi des jours faits par élève pour RoutineSite.
 //
 // Routes (toutes en POST, JSON) :
@@ -34,6 +34,10 @@
 //                        (dates : jours de routine faits, pour la série de jours d'affilée de RoutineSite)
 //   /progres/ecrire     { classe, code, site, valeurs: { <clé>: valeur } } -> fusionne ces valeurs (null efface une clé)
 //   /admin/progres      { motdepasse }                        -> progression de tous les élèves
+//
+// Passage entre le portail famzak.github.io et les sites (adresses différentes) sans mettre le code ZF dans les liens :
+//   /fz/jeton           { classe, code }                      -> { jeton } chiffré (AES-GCM, clé tirée du secret ADMIN_PASSWORD), valable 5 min
+//   /fz/ouvrir          { jeton }                             -> { classe, code } si le jeton est valable
 //
 // Analyse automatique : lancée après chaque enregistrement de séance (en arrière-plan) avec Cloudflare Workers AI
 // (binding « AI » dans wrangler.toml, gratuit dans la franchise quotidienne, aucune clé) : un modèle de langage juge les critères
@@ -75,6 +79,8 @@ export default {
 
     const chemin = new URL(request.url).pathname.replace(/\/+$/, "");
     try {
+      if (chemin === "/fz/jeton") return await fzJeton(env, corps, cors);
+      if (chemin === "/fz/ouvrir") return await fzOuvrir(env, corps, cors);
       if (chemin === "/valider") return await valider(env, corps, cors);
       if (chemin === "/etat") return await etatEleve(env, corps, cors);
       if (chemin === "/admin/etat") return await adminEtat(env, request, corps, cors);
@@ -105,6 +111,39 @@ export default {
     return json({ erreur: "Route inconnue" }, 404, cors);
   }
 };
+
+// ---------- Jetons de passage entre le portail et les sites ----------
+const DUREE_JETON_MS = 5 * 60 * 1000;
+const b64url = u => btoa(String.fromCharCode(...u)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const deB64url = t => Uint8Array.from(atob(String(t).replace(/-/g, "+").replace(/_/g, "/")), ch => ch.charCodeAt(0));
+async function cleJeton(env) {
+  const k = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("famzak-jeton:" + env.ADMIN_PASSWORD));
+  return crypto.subtle.importKey("raw", k, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+async function fzJeton(env, c, cors) {
+  if (!env.ADMIN_PASSWORD) return json({ erreur: "Jetons indisponibles" }, 503, cors);
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const texte = new TextEncoder().encode(JSON.stringify({ k: c.classe, c: eleve.code, e: Date.now() + DUREE_JETON_MS }));
+  const chiffre = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await cleJeton(env), texte));
+  const tout = new Uint8Array(iv.length + chiffre.length); tout.set(iv); tout.set(chiffre, iv.length);
+  return json({ ok: true, jeton: b64url(tout) }, 200, cors);
+}
+async function fzOuvrir(env, c, cors) {
+  if (!env.ADMIN_PASSWORD) return json({ erreur: "Jetons indisponibles" }, 503, cors);
+  if (typeof c.jeton !== "string" || c.jeton.length > 400) return json({ erreur: "Jeton invalide" }, 400, cors);
+  let d;
+  try {
+    const tout = deB64url(c.jeton);
+    const clair = await crypto.subtle.decrypt({ name: "AES-GCM", iv: tout.slice(0, 12) }, await cleJeton(env), tout.slice(12));
+    d = JSON.parse(new TextDecoder().decode(clair));
+  } catch (e) { return json({ erreur: "Jeton invalide" }, 403, cors); }
+  if (!d || !(d.e > Date.now())) return json({ erreur: "Jeton expiré" }, 403, cors);
+  const eleve = await identifier(env, d.k, d.c);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  return json({ ok: true, classe: d.k, code: eleve.code }, 200, cors);
+}
 
 // ---------- Élève ----------
 async function valider(env, c, cors) {

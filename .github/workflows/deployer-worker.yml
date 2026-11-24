@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Tests
-        run: node worker/test/worker.test.mjs && node worker/test/analyse.test.mjs && node worker/test/reponses.test.mjs
+        run: node worker/test/worker.test.mjs && node worker/test/analyse.test.mjs && node worker/test/reponses.test.mjs && node worker/test/jeton.test.mjs
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

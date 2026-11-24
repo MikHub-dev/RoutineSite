@@ -6,8 +6,9 @@ main = "src/index.js"
 compatibility_date = "2025-09-01"
 
 [vars]
-# Adresse du site GitHub Pages (sans chemin ni / final), séparées par des virgules
-ALLOWED_ORIGINS = "https://mikhub-dev.github.io"
+# Adresses autorisées (sans chemin ni / final), séparées par des virgules
+ALLOWED_ORIGINS = "https://mikhub-dev.github.io,https://famzak.github.io"
+# famzak.github.io : le portail, qui n'utilise que /fz/jeton et /fz/ouvrir
 # Identique au sel de MathSite (evaluations.js) et de commun.js
 SEL = "mathsite:"
 # Empreintes SHA-256 des codes élèves, par classe (les mêmes que eleves/2026-2027.json de MathSite)
