@@ -186,9 +186,11 @@ function composerMessage() {
   const date = new Date().toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
   const reponses = jour.exercices.map((e, i) =>
     `Exercice ${i + 1} (${e.titre}) :\n${document.getElementById(`rep-${i}`).value.trim()}`).join("\n\n");
+  // Le prénom, jamais le code ZF (le verrou l'a déchiffré avec le code).
+  const qui = (window.FamZakVerrou && FamZakVerrou.nom && FamZakVerrou.nom(session.code)) || "Élève";
   return {
-    sujet: `RoutineSite · ${R.court} · Jour ${numero} · ${normaliser(session.code)} · essai ${nbEssais() + 1}`,
-    corps: `Code : ${normaliser(session.code)} (${nomClasse(session.classe)})\nRoutine : ${R.nom}\nJour ${numero} : ${jour.titreTxt || jour.titre}\nEssai n° ${nbEssais() + 1}\nEnvoyé le : ${date}\n\n${reponses}\n`
+    sujet: `RoutineSite · ${R.court} · Jour ${numero} · ${qui} · essai ${nbEssais() + 1}`,
+    corps: `Élève : ${qui} (${nomClasse(session.classe)})\nRoutine : ${R.nom}\nJour ${numero} : ${jour.titreTxt || jour.titre}\nEssai n° ${nbEssais() + 1}\nEnvoyé le : ${date}\n\n${reponses}\n`
   };
 }
 

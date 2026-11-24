@@ -12,6 +12,9 @@ ALLOWED_ORIGINS = "https://mikhub-dev.github.io"
 SEL = "mathsite:"
 # Empreintes SHA-256 des codes élèves, par classe (les mêmes que eleves/2026-2027.json de MathSite)
 EMPREINTES = '{"5e":["489c1aecd78964bf6e285c1425430f40b6a14f6cc4ba1f9ffd2bc2f48b203a24"],"seconde":["8f29042f5b26a90537a0cec56715742c14a0e793fd534ed7b5478796565bc56f"],"famille":["d407849a1cdcd66d153dede7d147896ded5bab84e54ae1d9e1fe6962234505fb","d91d5de7dffd23db09ceeb90d067be821556434b0e5715de302ec7c76b00c5a1","3d59bb698ab0002a131b50fabda888d0a1ff1ede656436267ce636bf2d78f8de"]}'
+# Prénom affiché à la place du code ZF, par empreinte, chiffré avec une clé tirée du code (illisible sans le code,
+# ne révèle pas les codes). Même liste que PRENOMS dans ../famzak-verrou.js.
+PRENOMS = '{"489c1aecd78964bf6e285c1425430f40b6a14f6cc4ba1f9ffd2bc2f48b203a24":"95f8H4vlTd0I1R3h.LyXSQW5ZD40IYtVh6RmmHARPR9E=","8f29042f5b26a90537a0cec56715742c14a0e793fd534ed7b5478796565bc56f":"qwanJmNCPcQKA0Fh.Rt26T3wdiBfJQQDRvpR/pMcnw44ivw==","3d59bb698ab0002a131b50fabda888d0a1ff1ede656436267ce636bf2d78f8de":"IpB/kG9qAP02cQRz.shlmIxqg0Z/+voKFUrnBgdTFPy8=","d407849a1cdcd66d153dede7d147896ded5bab84e54ae1d9e1fe6962234505fb":"mJlc/5YmEN+xdzHP.n2oUvT4gIfNC78Ps6gbRlSm5fVA=","d91d5de7dffd23db09ceeb90d067be821556434b0e5715de302ec7c76b00c5a1":"OThJ8xmnkyDw8YFB.sLR7oAZkd8ZOltAmUooyQ9sIVMZEPA=="}'
 
 # Archivage des enregistrements audio : dépôt GitHub PRIVÉ (à créer). Le Worker refuse d'écrire dans un dépôt public.
 # Le jeton d'accès est un secret : npx wrangler secret put GITHUB_TOKEN (droit « Contents : lecture et écriture » sur ce seul dépôt).

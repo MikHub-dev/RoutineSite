@@ -111,7 +111,7 @@ const lireMdp = () => { try { return sessionStorage.getItem(CLE_ADMIN) || ""; } 
 const ecrireMdp = m => { try { m ? sessionStorage.setItem(CLE_ADMIN, m) : sessionStorage.removeItem(CLE_ADMIN); } catch (e) {} };
 const appelRemise = (e, routine, jour) => {
   const j = jour === "tous" ? "'tous'" : jour;
-  return routine === "parole" ? `reinitParole('${e.empreinte}','${esc(e.code)}',${j})` : `remettre('${e.empreinte}','${esc(e.code)}','${routine}',${j})`;
+  return routine === "parole" ? `reinitParole('${e.empreinte}','${esc(nomEleve(e))}',${j})` : `remettre('${e.empreinte}','${esc(nomEleve(e))}','${routine}',${j})`;
 };
 const dateFr = iso => new Date(iso).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
 
@@ -223,7 +223,7 @@ function ouvrirCatalogue(routine) {
 function eleveHtml(e) {
   const total = Object.values(e.jours).reduce((s, l) => s + l.length, 0);
   return `<section class="eleve">
-    <div class="eleve-tete"><h2>${esc(e.code)}</h2><span class="aide" style="margin:0">${esc(nomClasse(e.classe))} · ${total} jour${total > 1 ? "s" : ""} fait${total > 1 ? "s" : ""}</span></div>
+    <div class="eleve-tete"><h2>${esc(nomEleve(e))}</h2><span class="aide" style="margin:0">${esc(nomClasse(e.classe))} · ${total} jour${total > 1 ? "s" : ""} fait${total > 1 ? "s" : ""}</span></div>
     ${Object.keys(NOMS_ALL).map(r => parcoursHtml(e, r)).join("")}
   </section>`;
 }
@@ -242,9 +242,16 @@ function parcoursHtml(e, routine) {
     <div class="grille">${cases}</div></div>`;
 }
 
-async function remettre(empreinte, code, routine, jour) {
+// Nom affiché d'un élève : son prénom (renvoyé par le serveur), jamais son code ZF.
+function nomEleve(x) {
+  if (x && x.prenom) return x.prenom;
+  const emp = (x && (x.empreinte || (typeof x.cle === "string" && x.cle.split(":")[1]))) || "";
+  return emp ? `Élève ${emp.slice(0, 6)}` : "Élève";
+}
+
+async function remettre(empreinte, nom, routine, jour) {
   const quoi = jour === "tous" ? `tous les jours de « ${NOMS_ALL[routine]} »` : `le jour ${jour} de « ${NOMS_ALL[routine]} »`;
-  if (!confirm(`Remettre ${quoi} à « non fait » pour ${code} ?`)) return;
+  if (!confirm(`Remettre ${quoi} à « non fait » pour ${nom} ?`)) return;
   try {
     await appelerSuivi("/admin/reinitialiser", { motdepasse: lireMdp(), empreinte, routine, jour });
   } catch (e) {
@@ -252,7 +259,7 @@ async function remettre(empreinte, code, routine, jour) {
     alert("Échec : " + e.message); return;
   }
   await afficher();
-  document.getElementById("message").textContent = `✓ ${code} : ${quoi} remis à « non fait ».`;
+  document.getElementById("message").textContent = `✓ ${nom} : ${quoi} remis à « non fait ».`;
 }
 
 // ---------- Probabilités et Technologie : corrections de Claude ----------
@@ -281,7 +288,7 @@ function envoiHtml(e) {
   const c = e.correction || {}, auto = e.correctionAuto || {};
   const id = e.cle.replace(/[^a-z0-9]/gi, "_");
   return `<div class="seance-p" id="env-${id}">
-    <h3>${esc(e.code)} · ${esc(NOMS[e.routine])} · jour ${e.jour} · essai ${e.essai || 1}<small>${esc(dateFr(e.date))}</small>
+    <h3>${esc(nomEleve(e))} · ${esc(NOMS[e.routine])} · jour ${e.jour} · essai ${e.essai || 1}<small>${esc(dateFr(e.date))}</small>
       <span class="statut ${cls}">${esc(lib)}${e.valideLe ? " · relue" : ""}</span></h3>
     <p class="small"><a class="lien" href="corrige.html?r=${e.routine}&j=${e.jour}" target="_blank" rel="noopener">Énoncés et corrigé du jour</a>${e.erreur ? ` · ${esc(e.erreur)}` : ""}</p>
     ${auto.aVerifier ? `<p class="alerte">⚠ Claude signale : ${esc(auto.aVerifier)}</p>` : ""}
@@ -397,14 +404,14 @@ function seanceHtml(s) {
     : s.analyse && s.analyse.statut === "en_cours" ? `<span>analyse en cours</span>`
     : s.notesAuto ? `<span style="color:var(--bleu)">noté automatiquement${s.analyse && s.analyse.verifier ? " · à vérifier" : ""}</span>` : `<span style="color:var(--rouge)">à noter</span>`;
   return `<div class="seance-p" id="seance-${esc(s.cle.replace(/:/g, "_"))}" data-cle="${esc(s.cle)}">
-    <h3>${esc(s.code)} · ${esc(nomClasse(s.classe))} · jour ${esc(s.jour)}<small>${esc(dateFr(s.date))} · ${etat}</small></h3>
+    <h3>${esc(nomEleve(s))} · ${esc(nomClasse(s.classe))} · jour ${esc(s.jour)}<small>${esc(dateFr(s.date))} · ${etat}</small></h3>
     ${audiosHtml(s)}
     ${analyseHtml(s)}
     ${exos}
     <label class="small" for="retour-${esc(s.cle.replace(/:/g, "_"))}">Retour montré à l'élève (automatique ; vous pouvez le modifier)</label>
     <textarea id="retour-${esc(s.cle.replace(/:/g, "_"))}" data-retour>${esc(s.retour || (s.analyse && s.analyse.retour) || "")}</textarea>
     <div class="barre"><button class="btn" type="button" onclick="enregistrerNotes('${esc(s.cle)}')">Valider / corriger les notes</button>
-      <button class="lien" type="button" onclick="reinitParole('${esc(s.cle.split(":")[1])}','${esc(s.code)}',${Number(s.jour)})">Remettre ce jour à zéro…</button>
+      <button class="lien" type="button" onclick="reinitParole('${esc(s.cle.split(":")[1])}','${esc(nomEleve(s))}',${Number(s.jour)})">Remettre ce jour à zéro…</button>
       <button class="lien" type="button" onclick="supprimerSeance('${esc(s.cle)}')">Supprimer cette séance seulement</button>
       <span class="small" data-msg></span></div>
   </div>`;
@@ -436,10 +443,10 @@ async function chargerArchive() {
   }
   msg.textContent = `${r.fichiers.length} fichier${r.fichiers.length > 1 ? "s" : ""}${r.tronque ? " (liste tronquée)" : ""}`;
   const groupes = {};
-  r.fichiers.forEach(f => { (groupes[`${f.code}|${f.classe}|${String(f.jour).padStart(3, "0")}`] = groupes[`${f.code}|${f.classe}|${String(f.jour).padStart(3, "0")}`] || []).push(f); });
+  r.fichiers.forEach(f => { const g = `${nomEleve(f)}|${f.classe}|${String(f.jour).padStart(3, "0")}`; (groupes[g] = groupes[g] || []).push(f); });
   zone.innerHTML = Object.keys(groupes).sort().map(k => {
-    const [code, classe, jour] = k.split("|");
-    return `<div class="archive-groupe"><h4>${esc(code)} · ${esc(nomClasse(classe))} · jour ${Number(jour)}</h4><ul class="small">${groupes[k].map(f => {
+    const [nom, classe, jour] = k.split("|");
+    return `<div class="archive-groupe"><h4>${esc(nom)} · ${esc(nomClasse(classe))} · jour ${Number(jour)}</h4><ul class="small">${groupes[k].map(f => {
       const donnees = f.nom.endsWith(".json");
       return `<li>${donnees ? "Sauvegarde des données (remise à zéro)" : esc(f.nom)} (${nf(f.taille / 1024, 0)} Ko) — ${donnees ? `<button class="lien" type="button" data-audio="${esc(f.chemin)}" data-act="telecharger">Télécharger</button>` : boutonsArchive(f.chemin)}</li>`;
     }).join("")}</ul></div>`;
@@ -477,11 +484,11 @@ document.addEventListener("click", async ev => {
 });
 
 // Remise à zéro d'un jour de « Fluidité verbale » : deux modes (garder ou supprimer les audios).
-function reinitParole(empreinte, code, jour) {
+function reinitParole(empreinte, nom, jour) {
   const quoi = jour === "tous" ? "tous les jours" : "le jour " + jour;
   const fond = document.createElement("div");
   fond.className = "ov"; fond.setAttribute("role", "dialog"); fond.setAttribute("aria-modal", "true");
-  fond.innerHTML = `<div class="ov-boite"><h3>Remettre à zéro ${esc(quoi)} · ${esc(code)}</h3>
+  fond.innerHTML = `<div class="ov-boite"><h3>Remettre à zéro ${esc(quoi)} · ${esc(nom)}</h3>
     <p>Les séances concernées (mesures, transcriptions, notes) et le statut « fait » sont effacés : l'élève devra refaire le jour. Que faire des enregistrements audio ?</p>
     <div class="ov-choix"><button class="btn" type="button" data-mode="garder">Remettre à zéro et GARDER les audios</button>
       <p class="small">Les audios restent dans l'archive privée, avec une sauvegarde des mesures, notes et transcriptions de la séance. Ils restent écoutables dans « Archive audio ».</p></div>
@@ -493,7 +500,7 @@ function reinitParole(empreinte, code, jour) {
     const mode = ev.target.dataset && ev.target.dataset.mode;
     if (ev.target === fond || mode === "annuler") { fond.remove(); return; }
     if (!mode) return;
-    if (mode === "supprimer" && !confirm(`Supprimer les audios de ${quoi} pour ${code} ? Cette action retire les fichiers de l'archive.`)) return;
+    if (mode === "supprimer" && !confirm(`Supprimer les audios de ${quoi} pour ${nom} ? Cette action retire les fichiers de l'archive.`)) return;
     fond.querySelectorAll("button").forEach(b => { b.disabled = true; });
     let r;
     try { r = await appelerSuivi("/admin/parole/reinitialiser", { motdepasse: lireMdp(), empreinte, jour, audios: mode }, 90000); }
@@ -505,8 +512,8 @@ function reinitParole(empreinte, code, jour) {
     fond.remove();
     await afficher();
     document.getElementById("message").textContent = mode === "garder"
-      ? `✓ ${code} : ${quoi} remis à zéro. Audios conservés dans l'archive (${r.audiosConserves} fichier${r.audiosConserves > 1 ? "s" : ""}), avec la sauvegarde des données.`
-      : `✓ ${code} : ${quoi} remis à zéro. ${r.audiosSupprimes} audio${r.audiosSupprimes > 1 ? "s" : ""} supprimé${r.audiosSupprimes > 1 ? "s" : ""} de l'archive.`;
+      ? `✓ ${nom} : ${quoi} remis à zéro. Audios conservés dans l'archive (${r.audiosConserves} fichier${r.audiosConserves > 1 ? "s" : ""}), avec la sauvegarde des données.`
+      : `✓ ${nom} : ${quoi} remis à zéro. ${r.audiosSupprimes} audio${r.audiosSupprimes > 1 ? "s" : ""} supprimé${r.audiosSupprimes > 1 ? "s" : ""} de l'archive.`;
   });
 }
 const blocSeance = cle => document.querySelector(`.seance-p[data-cle="${cle}"]`);

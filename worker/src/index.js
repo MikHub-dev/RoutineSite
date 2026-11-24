@@ -1,4 +1,4 @@
-// Version : 1.6 (progression des jeux des 6 sites FamZakSites liée au code ZF ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
+// Version : 1.7 (les réponses de l'espace enseignant portent le prénom de l'élève, « prenom », à afficher à la place du code ZF ; 1.6 : progression des jeux des 6 sites FamZakSites liée au code ZF ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
 // Worker « routinesite-suivi » : suivi des jours faits par élève pour RoutineSite.
 //
 // Routes (toutes en POST, JSON) :
@@ -152,7 +152,7 @@ async function progresLire(env, c, cors) {
   for (const nom of await toutesLesCles(env, `fait:${eleve.empreinte}:`)) {
     try { const v = JSON.parse(await env.SUIVI.get(nom)); if (v && v.date) dates.push(v.date); } catch (e) {}
   }
-  return json({ ok: true, progres, dates: dates.sort() }, 200, cors);
+  return json({ ok: true, progres, dates: dates.sort(), prenom: await prenomDe(env, c.classe, eleve.code) }, 200, cors);
 }
 
 async function progresEcrire(env, c, cors) {
@@ -186,7 +186,7 @@ async function adminProgres(env, request, c, cors) {
     const e = eleves[empreinte] || (eleves[empreinte] = { empreinte, code: v.code, classe: v.classe, sites: {} });
     e.sites[site] = { maj: v.maj, valeurs: v.valeurs };
   }
-  return json({ ok: true, eleves: Object.values(eleves) }, 200, cors);
+  return json({ ok: true, eleves: await avecPrenoms(env, Object.values(eleves)) }, 200, cors);
 }
 
 // ---------- Enseignant ----------
@@ -201,7 +201,7 @@ async function adminEtat(env, request, c, cors) {
     const e = eleves[empreinte] || (eleves[empreinte] = { empreinte, code: valeur.code, classe: valeur.classe, jours: Object.fromEntries(ROUTINES.map(r => [r, []])) });
     if (e.jours[routine]) e.jours[routine].push({ n: Number(n), date: valeur.date });
   }
-  const liste = Object.values(eleves).sort((a, b) => a.classe.localeCompare(b.classe) || a.code.localeCompare(b.code));
+  const liste = (await avecPrenoms(env, Object.values(eleves))).sort((a, b) => a.classe.localeCompare(b.classe) || String(a.prenom || a.code).localeCompare(String(b.prenom || b.code)));
   liste.forEach(e => ROUTINES.forEach(r => e.jours[r].sort((x, y) => x.n - y.n)));
   return json({ ok: true, eleves: liste }, 200, cors);
 }
@@ -331,7 +331,7 @@ async function paroleAudio(env, c, cors) {
   const horodatage = maintenant.toISOString().replace(/[-:]/g, "").slice(0, 15);
   const chemin = `audio/${c.classe}/${eleve.code}/jour-${String(jour).padStart(3, "0")}/${c.seance}-${c.exo}-${horodatage}.${ext}`;
   const r = await appelGitHub(env, "PUT", `/repos/${depot}/contents/${chemin}`, {
-    message: `Audio ${eleve.code} jour ${jour} ${c.exo}`, content: c.audio, ...(env.AUDIO_BRANCH ? { branch: env.AUDIO_BRANCH } : {})
+    message: `Audio ${await nomAffiche(env, c.classe, eleve.code)} jour ${jour} ${c.exo}`, content: c.audio, ...(env.AUDIO_BRANCH ? { branch: env.AUDIO_BRANCH } : {})
   });
   if (!r.ok) return json({ erreur: `Dépôt d'archive : refus de GitHub (${r.status})` }, 502, cors);
 
@@ -370,7 +370,7 @@ async function adminParoleArchive(env, request, c, cors) {
     const [, classe, code, jour, nom] = x.path.split("/");
     return { chemin: x.path, classe, code, jour: Number(jour.slice(5)), nom, taille: x.size || 0 };
   });
-  return json({ ok: true, fichiers, tronque: !!d.truncated }, 200, cors);
+  return json({ ok: true, fichiers: await avecPrenoms(env, fichiers), tronque: !!d.truncated }, 200, cors);
 }
 
 // Sert un fichier de l'archive. Le dépôt est celui du Worker (jamais choisi par l'appelant) ; le chemin est contrôlé.
@@ -446,7 +446,7 @@ async function adminParoleReinitialiser(env, request, c, cors) {
           if (!liste.some(s => (s.audios || []).length)) continue;
           const chemin = `audio/${ident.classe}/${ident.code}/jour-${String(jour).padStart(3, "0")}/reinitialisation-${horodatage}.json`;
           const contenu = JSON.stringify({ reinitialiseLe: new Date().toISOString(), classe: ident.classe, code: ident.code, jour: Number(jour), seances: liste }, null, 2);
-          const r = await appelGitHub(env, "PUT", `/repos/${a.depot}/contents/${chemin}`, { message: `Sauvegarde avant remise à zéro ${ident.code} jour ${jour}`, content: versBase64(contenu), ...(env.AUDIO_BRANCH ? { branch: env.AUDIO_BRANCH } : {}) });
+          const r = await appelGitHub(env, "PUT", `/repos/${a.depot}/contents/${chemin}`, { message: `Sauvegarde avant remise à zéro ${await nomAffiche(env, ident.classe, ident.code)} jour ${jour}`, content: versBase64(contenu), ...(env.AUDIO_BRANCH ? { branch: env.AUDIO_BRANCH } : {}) });
           if (!r.ok) throw new Error(`GitHub ${r.status}`);
           rapport.instantanes.push(chemin);
         }
@@ -546,7 +546,7 @@ async function paroleEtat(env, c, cors) {
 async function adminParole(env, request, c, cors) {
   const refus = await verifierMotDePasse(env, request, c.motdepasse, cors);
   if (refus) return refus;
-  return json({ ok: true, seances: await seancesDe(env, "parole:") }, 200, cors);
+  return json({ ok: true, seances: await avecPrenoms(env, await seancesDe(env, "parole:")) }, 200, cors);
 }
 
 async function adminParoleNoter(env, request, c, cors) {
@@ -602,7 +602,7 @@ async function deposerEnvoi(env, depot, v, relance = 0) {
     if (r0.ok) sha = (await r0.json().catch(() => ({}))).sha;
   }
   const r = await appelGitHub(env, "PUT", `/repos/${depot}/contents/${chemin}`, {
-    message: `Réponses ${v.code} ${v.routine} jour ${v.jour} (envoi ${v.envoi}${relance ? `, relance ${relance}` : ""})`,
+    message: `Réponses ${await nomAffiche(env, v.classe, v.code)} ${v.routine} jour ${v.jour} (envoi ${v.envoi}${relance ? `, relance ${relance}` : ""})`,
     content: versBase64(contenu), ...(sha ? { sha } : {}), ...(env.AUDIO_BRANCH ? { branch: env.AUDIO_BRANCH } : {})
   });
   if (r.ok) return { ok: true, chemin };
@@ -733,7 +733,7 @@ async function adminReponses(env, request, c, cors) {
     envois.push({ cle, ...v });
   }
   envois.sort((x, y) => String(x.date).localeCompare(String(y.date)));
-  return json({ ok: true, envois }, 200, cors);
+  return json({ ok: true, envois: await avecPrenoms(env, envois) }, 200, cors);
 }
 
 async function adminReponsesModifier(env, request, c, cors) {
@@ -803,6 +803,39 @@ async function memeTexte(a, b) {
 
 // ---------- Outils ----------
 function normaliser(s) { return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+
+// Prénom à afficher à la place du code ZF. Variable PRENOMS (wrangler.toml) : { <empreinte>: "iv.texte" en base64 },
+// chiffré en AES-GCM avec SHA-256("famzak-prenom:" + CODE) : il ne se lit qu'avec le code (que le Worker reçoit
+// ou a gardé avec chaque enregistrement), et la liste publique ne permet pas de retrouver les codes.
+// Même liste dans famzak-verrou.js. Code sans prénom : null (les pages affichent alors « Élève » + début d'empreinte).
+const octets = b => Uint8Array.from(atob(b), ch => ch.charCodeAt(0));
+const memoPrenoms = new Map();
+async function prenomDe(env, classe, code) {
+  const propre = normaliser(code);
+  if (!CLASSES.includes(classe) || !propre) return null;
+  const cle = `${classe}:${propre}`;
+  if (memoPrenoms.has(cle)) return memoPrenoms.get(cle);
+  let prenom = null;
+  try {
+    const v = (JSON.parse(env.PRENOMS || "{}"))[await sha256(`${env.SEL}${classe}:${propre}`)];
+    if (v) {
+      const [iv, texte] = v.split(".");
+      const k = await crypto.subtle.importKey("raw", await crypto.subtle.digest("SHA-256", new TextEncoder().encode("famzak-prenom:" + propre)), "AES-GCM", false, ["decrypt"]);
+      prenom = new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: octets(iv) }, k, octets(texte)));
+    }
+  } catch (e) { prenom = null; }
+  memoPrenoms.set(cle, prenom);
+  return prenom;
+}
+// Ajoute « prenom » à chaque élément qui porte { classe, code }.
+async function avecPrenoms(env, liste) {
+  for (const x of liste) if (x && x.code) x.prenom = await prenomDe(env, x.classe, x.code);
+  return liste;
+}
+// Nom lisible pour les messages (commits de l'archive) : le prénom, sinon le début de l'empreinte.
+async function nomAffiche(env, classe, code) {
+  return (await prenomDe(env, classe, code)) || `élève ${(await sha256(`${env.SEL}${classe}:${normaliser(code)}`)).slice(0, 6)}`;
+}
 
 async function identifier(env, classe, code) {
   if (!CLASSES.includes(classe)) return null;
