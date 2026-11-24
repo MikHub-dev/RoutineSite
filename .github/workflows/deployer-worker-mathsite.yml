@@ -17,8 +17,9 @@ jobs:
           repository: MikHub-dev/MathSite
           ref: main
           sparse-checkout: worker
-      - name: Tests
-        run: node worker/test/worker.test.mjs
+      # Le test du dépôt MathSite (worker/test) lit de vraies évaluations, devenues clôturées depuis : on vérifie la syntaxe.
+      - name: Vérification
+        run: node --check worker/src/index.js
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
