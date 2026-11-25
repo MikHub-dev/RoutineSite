@@ -1,4 +1,4 @@
-/* famzak-verrou.js — verrou simple (code ZF) des sites FamZakSites (v1.2).
+/* famzak-verrou.js — verrou simple (code ZF) des sites FamZakSites (v1.3 : charge aussi famzak-mur.js, le mur des réussites).
    Un seul fichier, servi par RoutineSite, chargé en tête de chaque page des 6 sites :
      <script src="https://mikhub-dev.github.io/RoutineSite/famzak-verrou.js"></script>
    et par le portail https://famzak.github.io/ avec data-portail="oui" (il n'y sert qu'à vérifier les codes).
@@ -244,9 +244,16 @@
     }, function () { demander(); });
     return;
   }
+  // Mur des réussites de la famille : repère les réussites des jeux et affiche le bandeau (famzak-mur.js, servi ici).
+  function chargerMur() {
+    if (window.FamZakMur || document.querySelector("script[data-famzak-mur]")) return;
+    var s = document.createElement("script");
+    s.src = SITES + "RoutineSite/famzak-mur.js?v=1"; s.async = true; s.setAttribute("data-famzak-mur", "");
+    (document.head || document.documentElement).appendChild(s);
+  }
   // 2. Code déjà donné sur l'un des sites ou sur le portail (gardé sur l'appareil)
   var a = lire();
-  if (a) { sessions(a, false); relierPortail(); return; }
+  if (a) { sessions(a, false); relierPortail(); chargerMur(); return; }
   // 3. Sinon : la page reste cachée et demande le code ZF
   demander();
 })();

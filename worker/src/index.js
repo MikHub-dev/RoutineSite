@@ -1,4 +1,4 @@
-// Version : 1.8 (jetons de passage /fz/jeton et /fz/ouvrir : le code ZF ne passe plus dans les liens entre le portail et les sites ; 1.7 : les réponses de l'espace enseignant portent le prénom de l'élève, « prenom », à afficher à la place du code ZF ; 1.6 : progression des jeux des 6 sites FamZakSites liée au code ZF ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
+// Version : 1.9 (mur des réussites de la famille : routes /mur/…, réussites de RoutineSite publiées par le serveur ; 1.8 : jetons de passage /fz/jeton et /fz/ouvrir : le code ZF ne passe plus dans les liens entre le portail et les sites ; 1.7 : les réponses de l'espace enseignant portent le prénom de l'élève, « prenom », à afficher à la place du code ZF ; 1.6 : progression des jeux des 6 sites FamZakSites liée au code ZF ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
 // Worker « routinesite-suivi » : suivi des jours faits par élève pour RoutineSite.
 //
 // Routes (toutes en POST, JSON) :
@@ -39,6 +39,13 @@
 //   /fz/jeton           { classe, code }                      -> { jeton } chiffré (AES-GCM, clé tirée du secret ADMIN_PASSWORD), valable 5 min
 //   /fz/ouvrir          { jeton }                             -> { classe, code } si le jeton est valable
 //
+// Mur des réussites de la famille (page mur.html du portail, bandeau des 6 sites, script famzak-mur.js) :
+//   /mur/publier        { classe, code, site, cle, texte, detail? } -> ajoute une réussite (une seule fois par élève, site et clé)
+//   /mur/lire           { classe, code, limite? }             -> { reussites, series, defi, mois } : prénoms seulement, jamais de code
+//   /mur/bravo          { classe, code, id }                  -> ajoute ou retire mon « Bravo »
+//   /mur/cacher         { classe, code, id, cache }           -> cache (ou remontre) une de MES réussites
+//   Les réussites de RoutineSite (jour fait, module fini, badges, séries, bonne correction) sont publiées ici même.
+//
 // Analyse automatique : lancée après chaque enregistrement de séance (en arrière-plan) avec Cloudflare Workers AI
 // (binding « AI » dans wrangler.toml, gratuit dans la franchise quotidienne, aucune clé) : un modèle de langage juge les critères
 // « jugés » et rédige le retour, un modèle d'embeddings recoupe la pertinence des liens. Voir analyse.js.
@@ -50,6 +57,9 @@
 // Stockage KV « SUIVI » : clé  fait:<empreinte>:<routine>:<jour>  ->  { code, classe, date }
 //                        clé  parole:<empreinte>:<jour>:<séance>  ->  { code, classe, jour, seance, date, maj, bilan, ex1, ex2, notes, retour }
 //                        clé  prog:<empreinte>:<site>  ->  { code, classe, maj, valeurs: { <clé>: valeur } }
+//                        clé  mur:fil  ->  [{ id, e: <empreinte>, prenom, site, texte, detail, date, bravos: [empreinte], cache }] (300 dernières)
+//                        clé  murvu:<empreinte>:<site>:<clé>  ->  id (réussite déjà publiée)
+//                        clé  serie:<empreinte>  ->  { prenom, dates: [AAAA-MM-JJ heure de Paris] } (jours de routine faits, pour les séries)
 //                        clé  rep:<empreinte>:<routine>:<jour>:<envoi>  ->  { code, classe, routine, jour, envoi, date, reponses, statut, chemin, correction }
 
 import { CRITERES, analyserSeance, signature } from "./analyse.js";
@@ -96,6 +106,10 @@ export default {
       if (chemin === "/admin/parole/noter") return await adminParoleNoter(env, request, corps, cors);
       if (chemin === "/admin/parole/analyser") return await adminParoleAnalyser(env, ctx, request, corps, cors);
       if (chemin === "/admin/parole/supprimer") return await adminParoleSupprimer(env, request, corps, cors);
+      if (chemin === "/mur/publier") return await murPublier(env, corps, cors);
+      if (chemin === "/mur/lire") return await murLire(env, corps, cors);
+      if (chemin === "/mur/bravo") return await murBravo(env, corps, cors);
+      if (chemin === "/mur/cacher") return await murCacher(env, corps, cors);
       if (chemin === "/progres/lire") return await progresLire(env, corps, cors);
       if (chemin === "/progres/ecrire") return await progresEcrire(env, corps, cors);
       if (chemin === "/admin/progres") return await adminProgres(env, request, corps, cors);
@@ -155,6 +169,7 @@ async function valider(env, c, cors) {
   const cle = `fait:${eleve.empreinte}:${c.routine}:${n}`;
   if (!(await env.SUIVI.get(cle))) {
     await env.SUIVI.put(cle, JSON.stringify({ code: eleve.code, classe: c.classe, date: new Date().toISOString() }));
+    try { await murApresJourFait(env, eleve, c.classe, c.routine, n); } catch (e) { /* le mur ne bloque jamais le suivi */ }
   }
   return json({ ok: true, jours: await joursDe(env, eleve.empreinte) }, 200, cors);
 }
@@ -682,7 +697,10 @@ async function recupererCorrection(env, cle, v, force = false) {
         if (d.statut === "echec") { v.statut = "echec"; v.erreur = texteBorne(d.erreur, 300); }
         else {
           const c = correctionValide(d.correction, v.reponses.length);
-          if (c && c.texte) { v.statut = "corrige"; v.correctionAuto = c; v.correction = { justes: c.justes, total: c.total, texte: c.texte, questions: c.questions }; v.corrigeLe = d.date || new Date().toISOString(); }
+          if (c && c.texte) {
+            v.statut = "corrige"; v.correctionAuto = c; v.correction = { justes: c.justes, total: c.total, texte: c.texte, questions: c.questions }; v.corrigeLe = d.date || new Date().toISOString();
+            try { await murApresCorrection(env, v); } catch (e) { /* le mur ne bloque jamais le suivi */ }
+          }
           else { v.statut = "echec"; v.erreur = "Correction illisible"; }
         }
       }
@@ -724,7 +742,10 @@ async function reponsesEnvoyer(env, c, cors) {
 
   // Le jour compte comme fait dès l'envoi (comme avec l'e-mail).
   const cleFait = `fait:${eleve.empreinte}:${c.routine}:${jour}`;
-  if (!(await env.SUIVI.get(cleFait))) await env.SUIVI.put(cleFait, JSON.stringify({ code: eleve.code, classe: c.classe, date: v.date }));
+  if (!(await env.SUIVI.get(cleFait))) {
+    await env.SUIVI.put(cleFait, JSON.stringify({ code: eleve.code, classe: c.classe, date: v.date }));
+    try { await murApresJourFait(env, eleve, c.classe, c.routine, jour); } catch (e) { /* le mur ne bloque jamais le suivi */ }
+  }
 
   const a = await archiveUtilisable(env, cors);
   if (a.refus) { v.statut = "non_configure"; }
@@ -904,4 +925,181 @@ async function sha256(texte) {
 
 function json(donnees, statut, cors) {
   return new Response(JSON.stringify(donnees), { status: statut, headers: { "Content-Type": "application/json", ...cors } });
+}
+
+// ---------- Mur des réussites de la famille ----------
+// Une réussite = { id, e (empreinte de l'auteur, jamais renvoyée), prenom, site, texte, detail, date, bravos: [empreintes], cache }.
+// Le texte est du texte brut (les pages l'affichent avec textContent) ; « [[…]] » y marque un nombre à mettre en valeur.
+// Seuls les prénoms sortent du serveur : ni code ZF, ni empreinte.
+const MUR_SITES = ["routinesite", "mathsite", "quantumsite", "culturegsite", "iasite", "morphosite"];
+const MUR_MAX = 300, MUR_MAX_JOUR = 40, MUR_DEFI = 25;
+const MUR_MODULES = {
+  probabilites: ["Le langage des probabilités", "Combiner des événements", "Expériences à plusieurs épreuves",
+    "Fréquences, simulation, tableaux croisés", "Probabilités conditionnelles", "Indépendance et répétition",
+    "Variables aléatoires", "Dénombrement", "Loi binomiale", "Sommes et grands nombres"],
+  technologie: ["L'ordinateur", "Coder l'information", "Réseaux et Internet", "Le Web", "Données et objets connectés",
+    "Transmission et infrastructures", "Cybersécurité", "Au cœur de la machine", "Intelligence artificielle",
+    "Perspectives et synthèse"]
+};
+const MUR_ROUTINES = { probabilites: "Probabilités en 100 jours", technologie: "Technologie numérique en 100 jours", parole: "Fluidité verbale en 100 jours" };
+const MUR_PALIERS_JOURS = [[1, "🌱 Premier pas"], [10, "🥉 10 jours"], [30, "🥈 30 jours"], [50, "🥇 Mi-parcours"], [100, "🏆 100 jours"]];
+const MUR_PALIERS_SERIE = [[3, "🔥 Série de 3 jours"], [7, "⚡ Série de 7 jours"], [30, "💎 Série de 30 jours"]];
+
+const murTexte = (s, max) => String(typeof s === "string" ? s : "").replace(/[\u0000-\u001f\u007f<>]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+// Date du jour à Paris (AAAA-MM-JJ) : les séries et la semaine suivent l'heure de la famille.
+const murJourParis = d => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+const murDecaler = (jour, n) => { const d = new Date(jour + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+
+async function murFil(env) { try { return JSON.parse(await env.SUIVI.get("mur:fil")) || []; } catch (e) { return []; } }
+async function murEcrireFil(env, fil) { await env.SUIVI.put("mur:fil", JSON.stringify(fil.slice(0, MUR_MAX))); }
+
+// Ajoute une réussite (une seule fois par élève, site et clé). Renvoie l'id, ou null si déjà publiée ou refusée.
+async function murAjouter(env, empreinte, classe, code, site, cle, texte, detail, grande) {
+  const vu = `murvu:${empreinte}:${site}:${cle}`;
+  if (await env.SUIVI.get(vu)) return null;
+  const quota = `murjour:${empreinte}:${murJourParis(new Date())}`;
+  const nb = Number(await env.SUIVI.get(quota)) || 0;
+  if (nb >= MUR_MAX_JOUR) return null;
+  const prenom = await prenomDe(env, classe, code);
+  if (!prenom) return null;                      // pas de prénom connu : rien sur le mur (jamais de code affiché)
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const fil = await murFil(env);
+  fil.unshift({ id, e: empreinte, prenom, site, texte, detail: detail || "", date: new Date().toISOString(), bravos: [], cache: false, grande: !!grande });
+  await murEcrireFil(env, fil);
+  await env.SUIVI.put(vu, id);
+  await env.SUIVI.put(quota, String(nb + 1), { expirationTtl: 172800 });
+  return id;
+}
+
+async function murPublier(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  if (!MUR_SITES.includes(c.site) || c.site === "routinesite") return json({ erreur: "Site inconnu" }, 400, cors);   // RoutineSite : publié par le serveur
+  const cle = murTexte(c.cle, 120), texte = murTexte(c.texte, 180), detail = murTexte(c.detail, 120);
+  if (!cle || !/^[\w:.\-]+$/.test(cle)) return json({ erreur: "Clé invalide" }, 400, cors);
+  if (texte.length < 4) return json({ erreur: "Texte invalide" }, 400, cors);
+  const id = await murAjouter(env, eleve.empreinte, c.classe, eleve.code, c.site, cle, texte, detail, c.grande === true);
+  return json({ ok: true, id, deja: !id }, 200, cors);
+}
+
+function murVue(r, moi) {
+  return { id: r.id, prenom: r.prenom, site: r.site, texte: r.texte, detail: r.detail, date: r.date, grande: !!r.grande,
+    bravos: r.bravos.length, jaiDitBravo: r.bravos.includes(moi), moi: r.e === moi, cache: !!r.cache };
+}
+
+// Série en cours : jours d'affilée jusqu'à aujourd'hui ou hier (heure de Paris).
+function murSerie(dates) {
+  const ens = new Set(dates || []);
+  let j = murJourParis(new Date());
+  if (!ens.has(j)) j = murDecaler(j, -1);
+  let n = 0;
+  while (ens.has(j)) { n++; j = murDecaler(j, -1); }
+  return n;
+}
+function murRecord(dates) {
+  let record = 0, cours = 0, prec = null;
+  [...new Set(dates || [])].sort().forEach(j => { cours = prec && murDecaler(prec, 1) === j ? cours + 1 : 1; record = Math.max(record, cours); prec = j; });
+  return record;
+}
+
+// Jours de routine faits (heure de Paris), gardés à part pour calculer les séries sans tout relire.
+async function murDatesDe(env, empreinte, classe, code) {
+  let s = null;
+  try { s = JSON.parse(await env.SUIVI.get(`serie:${empreinte}`)); } catch (e) {}
+  if (s && Array.isArray(s.dates)) return s;
+  const dates = new Set();
+  for (const nom of await toutesLesCles(env, `fait:${empreinte}:`)) {
+    try { const v = JSON.parse(await env.SUIVI.get(nom)); if (v && v.date) dates.add(murJourParis(new Date(v.date))); } catch (e) {}
+  }
+  s = { prenom: await prenomDe(env, classe, code), dates: [...dates].sort().slice(-400) };
+  await env.SUIVI.put(`serie:${empreinte}`, JSON.stringify(s));
+  return s;
+}
+
+// Appelé quand un jour de routine devient « fait » (première fois) : série, paliers de jours, module terminé.
+async function murApresJourFait(env, eleve, classe, routine, n) {
+  const s = await murDatesDe(env, eleve.empreinte, classe, eleve.code);
+  const recordAvant = murRecord(s.dates);
+  const aujourdhui = murJourParis(new Date());
+  if (!s.dates.includes(aujourdhui)) { s.dates.push(aujourdhui); s.dates = s.dates.sort().slice(-400); }
+  if (!s.prenom) s.prenom = await prenomDe(env, classe, eleve.code);
+  await env.SUIVI.put(`serie:${eleve.empreinte}`, JSON.stringify(s));
+  const nomRoutine = MUR_ROUTINES[routine] || routine;
+  const ajouter = (cle, texte, detail, grande) => murAjouter(env, eleve.empreinte, classe, eleve.code, "routinesite", cle, texte, detail, grande);
+  // Séries (toutes routines confondues), comme les badges de RoutineSite
+  const record = murRecord(s.dates);
+  for (const [p, nom] of MUR_PALIERS_SERIE) if (record >= p && recordAvant < p) await ajouter(`serie:${p}`, `a obtenu le badge ${nom}`, "Jours d'affilée, toutes routines", p >= 7);
+  // Paliers de jours faits dans cette routine
+  const faits = (await joursDe(env, eleve.empreinte))[routine] || [];
+  for (const [p, nom] of MUR_PALIERS_JOURS) if (faits.length === p) await ajouter(`jours:${routine}:${p}`, `a obtenu le badge ${nom}`, nomRoutine, p >= 30);
+  // Module de 10 jours terminé
+  const modules = MUR_MODULES[routine];
+  if (modules) {
+    const m = Math.ceil(n / 10), debut = (m - 1) * 10 + 1;
+    let complet = true;
+    for (let j = debut; j < debut + 10; j++) if (!faits.includes(j)) { complet = false; break; }
+    if (complet) await ajouter(`module:${routine}:${m}`, `a fini le module ${m} « ${modules[m - 1]} »`, nomRoutine, true);
+  }
+}
+
+// Appelé quand une correction de Probabilités ou Technologie arrive : au moins 3/4 des exercices justes.
+async function murApresCorrection(env, v) {
+  const c = v.correction || {};
+  if (!(c.total > 0) || c.justes / c.total < 0.75) return;
+  const eleve = await identifier(env, v.classe, v.code);
+  if (!eleve) return;
+  const texte = c.justes === c.total ? `a tout juste au jour ${v.jour} : [[${c.justes}/${c.total}]]` : `a eu [[${c.justes}/${c.total}]] au jour ${v.jour}`;
+  await murAjouter(env, eleve.empreinte, v.classe, eleve.code, "routinesite", `correction:${v.routine}:${v.jour}`, texte, MUR_ROUTINES[v.routine] || v.routine, c.justes === c.total);
+}
+
+async function murLire(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  const limite = Math.min(MUR_MAX, Math.max(1, Number(c.limite) || 100));
+  const fil = await murFil(env);
+  const visibles = fil.filter(r => !r.cache || r.e === eleve.empreinte);
+  // Ma série (créée au besoin), puis celles de toute la famille
+  await murDatesDe(env, eleve.empreinte, c.classe, eleve.code);
+  const series = [];
+  for (const nom of await toutesLesCles(env, "serie:")) {
+    let s = null; try { s = JSON.parse(await env.SUIVI.get(nom)); } catch (e) {}
+    if (s && s.prenom) series.push({ prenom: s.prenom, jours: murSerie(s.dates), record: murRecord(s.dates), moi: nom === `serie:${eleve.empreinte}` });
+  }
+  series.sort((a, b) => b.jours - a.jours || a.prenom.localeCompare(b.prenom));
+  // Défi de la semaine (du lundi au dimanche, heure de Paris) et réussites du mois, par site
+  const auj = murJourParis(new Date()), jourSemaine = (new Date(auj + "T12:00:00Z").getUTCDay() + 6) % 7, lundi = murDecaler(auj, -jourSemaine);
+  const parPrenom = {}, parSite = {};
+  let semaine = 0, mois = 0;
+  for (const r of fil) {
+    if (r.cache) continue;
+    const j = murJourParis(new Date(r.date));
+    if (j >= lundi) { semaine++; parPrenom[r.prenom] = (parPrenom[r.prenom] || 0) + 1; }
+    if (j.slice(0, 7) === auj.slice(0, 7)) { mois++; parSite[r.site] = (parSite[r.site] || 0) + 1; }
+  }
+  return json({ ok: true, moi: await prenomDe(env, c.classe, eleve.code), reussites: visibles.slice(0, limite).map(r => murVue(r, eleve.empreinte)), series,
+    defi: { but: MUR_DEFI, fait: semaine, parPrenom, fin: murDecaler(lundi, 6) }, mois: { total: mois, parSite } }, 200, cors);
+}
+
+async function murBravo(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  const fil = await murFil(env);
+  const r = fil.find(x => x.id === c.id);
+  if (!r) return json({ erreur: "Réussite introuvable" }, 404, cors);
+  const i = r.bravos.indexOf(eleve.empreinte);
+  if (i >= 0) r.bravos.splice(i, 1); else r.bravos.push(eleve.empreinte);
+  await murEcrireFil(env, fil);
+  return json({ ok: true, bravos: r.bravos.length, jaiDitBravo: i < 0 }, 200, cors);
+}
+
+async function murCacher(env, c, cors) {
+  const eleve = await identifier(env, c.classe, c.code);
+  if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  const fil = await murFil(env);
+  const r = fil.find(x => x.id === c.id);
+  if (!r) return json({ erreur: "Réussite introuvable" }, 404, cors);
+  if (r.e !== eleve.empreinte) return json({ erreur: "Seul l'auteur peut cacher sa réussite" }, 403, cors);
+  r.cache = c.cache !== false;
+  await murEcrireFil(env, fil);
+  return json({ ok: true, cache: r.cache }, 200, cors);
 }
