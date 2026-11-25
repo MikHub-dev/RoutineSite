@@ -1,4 +1,4 @@
-// Version : 1.9 (mur des réussites de la famille : routes /mur/…, réussites de RoutineSite publiées par le serveur ; 1.8 : jetons de passage /fz/jeton et /fz/ouvrir : le code ZF ne passe plus dans les liens entre le portail et les sites ; 1.7 : les réponses de l'espace enseignant portent le prénom de l'élève, « prenom », à afficher à la place du code ZF ; 1.6 : progression des jeux des 6 sites FamZakSites liée au code ZF ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
+// Version : 1.10 (mur : rattrapage des réussites passées déjà gardées sur le serveur, date d'origine ; 1.9 : mur des réussites de la famille : routes /mur/…, réussites de RoutineSite publiées par le serveur ; 1.8 : jetons de passage /fz/jeton et /fz/ouvrir : le code ZF ne passe plus dans les liens entre le portail et les sites ; 1.7 : les réponses de l'espace enseignant portent le prénom de l'élève, « prenom », à afficher à la place du code ZF ; 1.6 : progression des jeux des 6 sites FamZakSites liée au code ZF ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
 // Worker « routinesite-suivi » : suivi des jours faits par élève pour RoutineSite.
 //
 // Routes (toutes en POST, JSON) :
@@ -63,6 +63,7 @@
 //                        clé  rep:<empreinte>:<routine>:<jour>:<envoi>  ->  { code, classe, routine, jour, envoi, date, reponses, statut, chemin, correction }
 
 import { CRITERES, analyserSeance, signature } from "./analyse.js";
+import { MUR_TITRES } from "./mur-titres.js";
 
 const ROUTINES = ["probabilites", "technologie", "parole"];
 const CLASSES = ["5e", "seconde", "famille"];
@@ -932,7 +933,7 @@ function json(donnees, statut, cors) {
 // Le texte est du texte brut (les pages l'affichent avec textContent) ; « [[…]] » y marque un nombre à mettre en valeur.
 // Seuls les prénoms sortent du serveur : ni code ZF, ni empreinte.
 const MUR_SITES = ["routinesite", "mathsite", "quantumsite", "culturegsite", "iasite", "morphosite"];
-const MUR_MAX = 300, MUR_MAX_JOUR = 40, MUR_DEFI = 25;
+const MUR_MAX = 500, MUR_MAX_JOUR = 40, MUR_DEFI = 25;
 const MUR_MODULES = {
   probabilites: ["Le langage des probabilités", "Combiner des événements", "Expériences à plusieurs épreuves",
     "Fréquences, simulation, tableaux croisés", "Probabilités conditionnelles", "Indépendance et répétition",
@@ -951,12 +952,24 @@ const murJourParis = d => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/P
 const murDecaler = (jour, n) => { const d = new Date(jour + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 
 async function murFil(env) { try { return JSON.parse(await env.SUIVI.get("mur:fil")) || []; } catch (e) { return []; } }
-async function murEcrireFil(env, fil) { await env.SUIVI.put("mur:fil", JSON.stringify(fil.slice(0, MUR_MAX))); }
+async function murEcrireFil(env, fil) {
+  fil.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  await env.SUIVI.put("mur:fil", JSON.stringify(fil.slice(0, MUR_MAX)));
+}
+async function murDejaRattrapees(env) { try { return new Set(JSON.parse(await env.SUIVI.get("murvu:rattrapage")) || []); } catch (e) { return new Set(); } }
+// Date d'origine acceptée (passée, après 2024) : « AAAA-MM-JJ » ou ISO complet. Sinon null (= maintenant).
+function murDate(d) {
+  if (typeof d !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(d)) return null;
+  const t = Date.parse(d.length === 10 ? d + "T12:00:00Z" : d);
+  if (!(t > Date.parse("2024-01-01")) || t > Date.now() + 60000) return null;
+  return new Date(Math.min(t, Date.now())).toISOString();
+}
 
 // Ajoute une réussite (une seule fois par élève, site et clé). Renvoie l'id, ou null si déjà publiée ou refusée.
-async function murAjouter(env, empreinte, classe, code, site, cle, texte, detail, grande) {
+async function murAjouter(env, empreinte, classe, code, site, cle, texte, detail, grande, date) {
   const vu = `murvu:${empreinte}:${site}:${cle}`;
   if (await env.SUIVI.get(vu)) return null;
+  if ((await murDejaRattrapees(env)).has(`${empreinte}:${site}:${cle}`)) return null;
   const quota = `murjour:${empreinte}:${murJourParis(new Date())}`;
   const nb = Number(await env.SUIVI.get(quota)) || 0;
   if (nb >= MUR_MAX_JOUR) return null;
@@ -964,7 +977,7 @@ async function murAjouter(env, empreinte, classe, code, site, cle, texte, detail
   if (!prenom) return null;                      // pas de prénom connu : rien sur le mur (jamais de code affiché)
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const fil = await murFil(env);
-  fil.unshift({ id, e: empreinte, prenom, site, texte, detail: detail || "", date: new Date().toISOString(), bravos: [], cache: false, grande: !!grande });
+  fil.unshift({ id, e: empreinte, prenom, site, cle, texte, detail: detail || "", date: murDate(date) || new Date().toISOString(), bravos: [], cache: false, grande: !!grande });
   await murEcrireFil(env, fil);
   await env.SUIVI.put(vu, id);
   await env.SUIVI.put(quota, String(nb + 1), { expirationTtl: 172800 });
@@ -978,7 +991,7 @@ async function murPublier(env, c, cors) {
   const cle = murTexte(c.cle, 120), texte = murTexte(c.texte, 180), detail = murTexte(c.detail, 120);
   if (!cle || !/^[\w:.\-]+$/.test(cle)) return json({ erreur: "Clé invalide" }, 400, cors);
   if (texte.length < 4) return json({ erreur: "Texte invalide" }, 400, cors);
-  const id = await murAjouter(env, eleve.empreinte, c.classe, eleve.code, c.site, cle, texte, detail, c.grande === true);
+  const id = await murAjouter(env, eleve.empreinte, c.classe, eleve.code, c.site, cle, texte, detail, c.grande === true, c.date);
   return json({ ok: true, id, deja: !id }, 200, cors);
 }
 
@@ -1055,6 +1068,7 @@ async function murApresCorrection(env, v) {
 async function murLire(env, c, cors) {
   const eleve = await identifier(env, c.classe, c.code);
   if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
+  try { await murRattrapage(env); } catch (e) { /* on réessaiera à la prochaine lecture */ }
   const limite = Math.min(MUR_MAX, Math.max(1, Number(c.limite) || 100));
   const fil = await murFil(env);
   const visibles = fil.filter(r => !r.cache || r.e === eleve.empreinte);
@@ -1102,4 +1116,109 @@ async function murCacher(env, c, cors) {
   r.cache = c.cache !== false;
   await murEcrireFil(env, fil);
   return json({ ok: true, cache: r.cache }, 200, cors);
+}
+
+// ---------- Rattrapage : les réussites passées déjà gardées sur le serveur (une seule fois) ----------
+// Jours de routine (fait:…), corrections (rep:…) et progression des jeux des sites (prog:…) : chaque réussite
+// est ajoutée au mur à sa date d'origine, avec le prénom de l'élève. Les titres viennent de mur-titres.js.
+// Les notes d'évaluation de MathSite (gardées dans le dépôt de MathSite) arrivent quand l'élève ouvre son espace.
+const MUR_RATTRAPAGE = "1";
+async function murRattrapage(env) {
+  if ((await env.SUIVI.get("mur:rattrapage")) === MUR_RATTRAPAGE) return 0;
+  await env.SUIVI.put("mur:rattrapage", MUR_RATTRAPAGE);
+  const cands = [];
+  const ajouter = (e, classe, code, site, cle, texte, detail, date, grande) => cands.push({ e, classe, code, site, cle, texte, detail: detail || "", date, grande: !!grande });
+  const lireJSON = async nom => { try { return JSON.parse(await env.SUIVI.get(nom)); } catch (x) { return null; } };
+
+  // RoutineSite : jours faits
+  const parEleve = {};
+  for (const nom of await toutesLesCles(env, "fait:")) {
+    const [, e, routine, n] = nom.split(":");
+    const v = await lireJSON(nom);
+    if (!v || !v.date) continue;
+    const x = parEleve[e] || (parEleve[e] = { code: v.code, classe: v.classe, routines: {} });
+    (x.routines[routine] || (x.routines[routine] = [])).push({ n: Number(n), date: v.date });
+  }
+  for (const [e, x] of Object.entries(parEleve)) {
+    const toutes = [];
+    for (const [routine, jours] of Object.entries(x.routines)) {
+      jours.sort((a, b) => a.date.localeCompare(b.date));
+      toutes.push(...jours);
+      const nomRoutine = MUR_ROUTINES[routine] || routine;
+      for (const [p, nom] of MUR_PALIERS_JOURS) if (jours.length >= p) ajouter(e, x.classe, x.code, "routinesite", `jours:${routine}:${p}`, `a obtenu le badge ${nom}`, nomRoutine, jours[p - 1].date, p >= 30);
+      const modules = MUR_MODULES[routine];
+      if (modules) for (let m = 1; m <= 10; m++) {
+        const dix = jours.filter(j => j.n > (m - 1) * 10 && j.n <= m * 10);
+        if (dix.length === 10) ajouter(e, x.classe, x.code, "routinesite", `module:${routine}:${m}`, `a fini le module ${m} « ${modules[m - 1]} »`, nomRoutine, dix[dix.length - 1].date, true);
+      }
+    }
+    // Séries : premier jour où la série atteint 3, 7, 30 jours d'affilée (heure de Paris)
+    const dernier = {};
+    toutes.forEach(j => { const d = murJourParis(new Date(j.date)); if (!dernier[d] || j.date > dernier[d]) dernier[d] = j.date; });
+    let cours = 0, prec = null;
+    const atteint = {};
+    Object.keys(dernier).sort().forEach(d => {
+      cours = prec && murDecaler(prec, 1) === d ? cours + 1 : 1; prec = d;
+      for (const [p] of MUR_PALIERS_SERIE) if (cours >= p && !atteint[p]) atteint[p] = dernier[d];
+    });
+    for (const [p, nom] of MUR_PALIERS_SERIE) if (atteint[p]) ajouter(e, x.classe, x.code, "routinesite", `serie:${p}`, `a obtenu le badge ${nom}`, "Jours d'affilée, toutes routines", atteint[p], p >= 7);
+  }
+  // RoutineSite : corrections d'au moins 3/4
+  for (const nom of await toutesLesCles(env, "rep:")) {
+    const v = await lireJSON(nom);
+    const c = v && v.statut === "corrige" && v.correction;
+    if (!c || !(c.total > 0) || c.justes / c.total < 0.75) continue;
+    const e = nom.split(":")[1];
+    const texte = c.justes === c.total ? `a tout juste au jour ${v.jour} : [[${c.justes}/${c.total}]]` : `a eu [[${c.justes}/${c.total}]] au jour ${v.jour}`;
+    ajouter(e, v.classe, v.code, "routinesite", `correction:${v.routine}:${v.jour}`, texte, MUR_ROUTINES[v.routine] || v.routine, v.corrigeLe || v.date, c.justes === c.total);
+  }
+  // Jeux des autres sites (progression liée au code ZF)
+  for (const nom of await toutesLesCles(env, "prog:")) {
+    const [, e, site] = nom.split(":");
+    const v = await lireJSON(nom);
+    if (!v || !v.valeurs || !MUR_SITES.includes(site) || site === "routinesite") continue;
+    const maj = v.maj || new Date().toISOString();
+    for (const [k, val] of Object.entries(v.valeurs)) {
+      const t = MUR_TITRES[k];
+      let m;
+      if ((m = /^famzak:quiz:(.+)$/.exec(k))) {
+        if (!val || !(val.total >= 3) || val.score !== val.total) continue;
+        ajouter(e, v.classe, v.code, site, "quiz:" + m[1], t ? `a fait un sans-faute au quiz « ${t.titre} »` : "a fait un sans-faute à un quiz", `[[${val.score}/${val.total}]]`, val.date || maj);
+      } else if (/^qflash-/.test(k) && t && t.n) {
+        const ok = val && typeof val === "object" ? Object.values(val).filter(x => x === "ok").length : 0;
+        if (t.n >= 5 && ok >= t.n) ajouter(e, v.classe, v.code, site, "fiches:" + k, `connaît maintenant les ${t.n} fiches « ${t.titre} »`, "Toutes marquées « Je la connais »", maj, true);
+      } else if (k === "famzak:iasite:etapes-vues") {
+        if (Array.isArray(val) && val.length >= 15) ajouter(e, v.classe, v.code, site, "etapes:15", "a parcouru les 15 étapes du micro-GPT", "Construire une IA de zéro", maj, true);
+      } else if ((m = /^famzak:morpho:(.+)$/.exec(k)) && m[1] !== "mode-devine") {
+        if (!val || !val.fini) continue;
+        const d = Object.values(val.devine || {}), justes = d.filter(Boolean).length;
+        ajouter(e, v.classe, v.code, site, "projet:" + m[1], `a terminé le projet « ${t ? t.titre : m[1]} »${d.length ? ` en devinant juste ${justes} fois sur ${d.length}` : ""}`, "Projet concret", maj);
+      } else if (k === "famzak:mathsite:ffjm" && val && typeof val === "object") {
+        for (const [f, r] of Object.entries(val)) {
+          if (!r || !r.ok) continue;
+          const sec = Number(r.sec) || 0, duree = sec ? (Math.floor(sec / 60) ? Math.floor(sec / 60) + " min " : "") + (sec % 60) + " s" : "";
+          const tf = MUR_TITRES["ffjm:" + f];
+          ajouter(e, v.classe, v.code, site, "ffjm:" + f, tf ? `a réussi le défi chronométré « ${tf.titre} »` : "a réussi un défi chronométré FFJM", duree ? `En [[${duree}]]` : "Concours FFJM", r.date || maj);
+        }
+      }
+    }
+  }
+  // Ajout au fil : prénom obligatoire, sans doublon avec ce qui y est déjà
+  const fil = await murFil(env);
+  const deja = new Set(fil.map(r => r.cle ? `${r.e}:${r.site}:${r.cle}` : `${r.e}:${r.site}:${r.texte}`));
+  const vus = await murDejaRattrapees(env);
+  let ajoutes = 0;
+  for (const x of cands) {
+    const id1 = `${x.e}:${x.site}:${x.cle}`;
+    if (deja.has(id1) || deja.has(`${x.e}:${x.site}:${x.texte}`) || vus.has(id1)) continue;
+    const prenom = await prenomDe(env, x.classe, x.code);
+    if (!prenom) continue;
+    deja.add(id1); vus.add(id1); ajoutes++;
+    fil.push({ id: Date.parse(x.date).toString(36) + Math.random().toString(36).slice(2, 7), e: x.e, prenom, site: x.site, cle: x.cle, texte: murTexte(x.texte, 180), detail: murTexte(x.detail, 120), date: murDate(x.date) || new Date().toISOString(), bravos: [], cache: false, grande: x.grande });
+  }
+  if (ajoutes) {
+    await murEcrireFil(env, fil);
+    await env.SUIVI.put("murvu:rattrapage", JSON.stringify([...vus]));
+  }
+  return ajoutes;
 }

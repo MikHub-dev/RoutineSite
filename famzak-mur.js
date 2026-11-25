@@ -1,4 +1,4 @@
-/* famzak-mur.js — mur des réussites de la famille FamZakSites (v1.0).
+/* famzak-mur.js — mur des réussites de la famille FamZakSites (v1.1 : date d'origine possible).
    Un seul fichier, servi par RoutineSite. Chargé :
    - sur les 6 sites, par famzak-verrou.js dès que le code ZF est connu (rien à ajouter dans les pages) ;
    - sur le portail famzak.github.io (page mur.html et accueil), par une balise <script>.
@@ -51,12 +51,12 @@
   function noterEnvoyee(id) {
     try { var l = JSON.parse(localStorage.getItem(ENVOYEES)) || []; l.push(id); localStorage.setItem(ENVOYEES, JSON.stringify(l.slice(-400))); } catch (e) {}
   }
-  function publier(site, cle, texte, detail, grande, qui) {
+  function publier(site, cle, texte, detail, grande, qui, date) {
     var a = acces();
     if (!(qui || a) || !SITES[site] || site === "routinesite") return Promise.resolve(null);
     var id = !qui && a && a.h ? a.h.slice(0, 16) + ":" + site + ":" + cle : null;
     if (id && dejaEnvoyee(id)) return Promise.resolve(null);
-    return appel("/mur/publier", { site: site, cle: cle, texte: texte, detail: detail || "", grande: !!grande }, qui)
+    return appel("/mur/publier", { site: site, cle: cle, texte: texte, detail: detail || "", grande: !!grande, date: date || undefined }, qui)
       .then(function (d) { if (id) noterEnvoyee(id); if (d && d.id) rafraichirBandeau(); return d; }, function () { return null; });
   }
 
@@ -204,7 +204,7 @@
   window.FamZakMur = { publier: publier, lire: lire, bravo: bravo, cacher: cacher, rafraichirBandeau: rafraichirBandeau,
     SITES: SITES, PAGE_MUR: PAGE_MUR, texteHtml: texteHtml, texteBrut: texteBrut, esc: esc, ilYa: ilYa };
 
-  // Publications demandées avant le chargement de ce fichier : window.FamZakMurAttente = [[site, cle, texte, detail, grande, qui], …]
+  // Publications demandées avant le chargement de ce fichier : window.FamZakMurAttente = [[site, cle, texte, detail, grande, qui, date], …] (date : AAAA-MM-JJ d'origine, facultative)
   var file = window.FamZakMurAttente;
   window.FamZakMurAttente = { push: function (x) { publier.apply(null, x); } };
   if (Array.isArray(file)) file.forEach(function (x) { publier.apply(null, x); });
