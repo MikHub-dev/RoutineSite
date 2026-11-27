@@ -129,4 +129,17 @@ assert.equal(JSON.parse(kv.get("mur:fil")).find(x => x.id === r.corps.id).date, 
 r = await appel("/mur/publier", { ...B, site: "mathsite", cle: "eval:y", texte: "a obtenu [[12/20]]", date: "2099-01-01" });
 assert.ok(Date.parse(JSON.parse(kv.get("mur:fil")).find(x => x.id === r.corps.id).date) <= Date.now(), "date future refusée");
 assert.ok(n1 > avant);
+// Nettoyage unique : réussites MorphoSite de test de PAPA et MARC retirées, le reste gardé
+{
+  const fil = JSON.parse(kv.get("mur:fil"));
+  const faux = (id, site, prenom) => ({ id, e: "x", prenom, site, cle: "k" + id, texte: "t", detail: "", date: "2026-11-20T10:00:00.000Z", bravos: [], cache: false, grande: false });
+  fil.push(faux("n1", "morphosite", "PAPA"), faux("n2", "morphosite", "MARC"), faux("n3", "routinesite", "PAPA"), faux("n4", "morphosite", "VIKA"), faux("n5", "mathsite", "MARC"));
+  kv.set("mur:fil", JSON.stringify(fil));
+  kv.delete("mur:nettoyage");
+  await appel("/mur/lire", B);
+  const ids = JSON.parse(kv.get("mur:fil")).map(x => x.id);
+  assert.ok(!ids.includes("n1") && !ids.includes("n2"), "MorphoSite de PAPA et MARC retirées");
+  assert.ok(["n3", "n4", "n5"].every(i => ids.includes(i)), "les autres réussites restent");
+  assert.equal(ids.length, fil.length - 2);
+}
 console.log("mur.test.mjs : OK");

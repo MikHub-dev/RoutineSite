@@ -1,4 +1,4 @@
-// Version : 1.10 (mur : rattrapage des réussites passées déjà gardées sur le serveur, date d'origine ; 1.9 : mur des réussites de la famille : routes /mur/…, réussites de RoutineSite publiées par le serveur ; 1.8 : jetons de passage /fz/jeton et /fz/ouvrir : le code ZF ne passe plus dans les liens entre le portail et les sites ; 1.7 : les réponses de l'espace enseignant portent le prénom de l'élève, « prenom », à afficher à la place du code ZF ; 1.6 : progression des jeux des 6 sites FamZakSites liée au code ZF ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
+// Version : 1.11 (mur : retrait unique des réussites MorphoSite de test de PAPA et MARC ; 1.10 : mur : rattrapage des réussites passées déjà gardées sur le serveur, date d'origine ; 1.9 : mur des réussites de la famille : routes /mur/…, réussites de RoutineSite publiées par le serveur ; 1.8 : jetons de passage /fz/jeton et /fz/ouvrir : le code ZF ne passe plus dans les liens entre le portail et les sites ; 1.7 : les réponses de l'espace enseignant portent le prénom de l'élève, « prenom », à afficher à la place du code ZF ; 1.6 : progression des jeux des 6 sites FamZakSites liée au code ZF ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
 // Worker « routinesite-suivi » : suivi des jours faits par élève pour RoutineSite.
 //
 // Routes (toutes en POST, JSON) :
@@ -1069,6 +1069,7 @@ async function murLire(env, c, cors) {
   const eleve = await identifier(env, c.classe, c.code);
   if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
   try { await murRattrapage(env); } catch (e) { /* on réessaiera à la prochaine lecture */ }
+  try { await murNettoyage(env); } catch (e) { /* idem */ }
   const limite = Math.min(MUR_MAX, Math.max(1, Number(c.limite) || 100));
   const fil = await murFil(env);
   const visibles = fil.filter(r => !r.cache || r.e === eleve.empreinte);
@@ -1116,6 +1117,19 @@ async function murCacher(env, c, cors) {
   r.cache = c.cache !== false;
   await murEcrireFil(env, fil);
   return json({ ok: true, cache: r.cache }, 200, cors);
+}
+
+// ---------- Nettoyage unique : réussites de test retirées du mur (demande d'Armen, 27/11/2026) ----------
+// Les marques murvu:… restent, pour que ces réussites de test ne reviennent pas.
+const MUR_NETTOYAGE = "1";
+const MUR_A_RETIRER = [{ site: "morphosite", prenoms: ["PAPA", "MARC"] }];
+async function murNettoyage(env) {
+  if ((await env.SUIVI.get("mur:nettoyage")) === MUR_NETTOYAGE) return 0;
+  const fil = await murFil(env);
+  const garder = fil.filter(r => !MUR_A_RETIRER.some(x => r.site === x.site && x.prenoms.includes(r.prenom)));
+  if (garder.length !== fil.length) await murEcrireFil(env, garder);
+  await env.SUIVI.put("mur:nettoyage", MUR_NETTOYAGE);
+  return fil.length - garder.length;
 }
 
 // ---------- Rattrapage : les réussites passées déjà gardées sur le serveur (une seule fois) ----------
