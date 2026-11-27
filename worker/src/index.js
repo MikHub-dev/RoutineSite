@@ -1,4 +1,4 @@
-// Version : 1.11 (mur : retrait unique des réussites MorphoSite de test de PAPA et MARC ; 1.10 : mur : rattrapage des réussites passées déjà gardées sur le serveur, date d'origine ; 1.9 : mur des réussites de la famille : routes /mur/…, réussites de RoutineSite publiées par le serveur ; 1.8 : jetons de passage /fz/jeton et /fz/ouvrir : le code ZF ne passe plus dans les liens entre le portail et les sites ; 1.7 : les réponses de l'espace enseignant portent le prénom de l'élève, « prenom », à afficher à la place du code ZF ; 1.6 : progression des jeux des 6 sites FamZakSites liée au code ZF ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
+// Version : 1.12 (mur : notes et avancement des évaluations MathSite ajoutés par le serveur, d'après evaluations-data.js ; 1.11 : mur : retrait unique des réussites MorphoSite de test de PAPA et MARC ; 1.10 : mur : rattrapage des réussites passées déjà gardées sur le serveur, date d'origine ; 1.9 : mur des réussites de la famille : routes /mur/…, réussites de RoutineSite publiées par le serveur ; 1.8 : jetons de passage /fz/jeton et /fz/ouvrir : le code ZF ne passe plus dans les liens entre le portail et les sites ; 1.7 : les réponses de l'espace enseignant portent le prénom de l'élève, « prenom », à afficher à la place du code ZF ; 1.6 : progression des jeux des 6 sites FamZakSites liée au code ZF ; 1.5 : réponses écrites de Probabilités et Technologie corrigées par Claude via une GitHub Action ; 1.4 : séances de « Fluidité verbale » : archivage audio privé, accès et remise à zéro réservés à l'enseignant, analyse et notes automatiques par Workers AI)
 // Worker « routinesite-suivi » : suivi des jours faits par élève pour RoutineSite.
 //
 // Routes (toutes en POST, JSON) :
@@ -966,13 +966,13 @@ function murDate(d) {
 }
 
 // Ajoute une réussite (une seule fois par élève, site et clé). Renvoie l'id, ou null si déjà publiée ou refusée.
-async function murAjouter(env, empreinte, classe, code, site, cle, texte, detail, grande, date) {
+async function murAjouter(env, empreinte, classe, code, site, cle, texte, detail, grande, date, sansQuota) {
   const vu = `murvu:${empreinte}:${site}:${cle}`;
   if (await env.SUIVI.get(vu)) return null;
   if ((await murDejaRattrapees(env)).has(`${empreinte}:${site}:${cle}`)) return null;
   const quota = `murjour:${empreinte}:${murJourParis(new Date())}`;
   const nb = Number(await env.SUIVI.get(quota)) || 0;
-  if (nb >= MUR_MAX_JOUR) return null;
+  if (nb >= MUR_MAX_JOUR && !sansQuota) return null;
   const prenom = await prenomDe(env, classe, code);
   if (!prenom) return null;                      // pas de prénom connu : rien sur le mur (jamais de code affiché)
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1070,6 +1070,7 @@ async function murLire(env, c, cors) {
   if (!eleve) return json({ erreur: "Code inconnu" }, 403, cors);
   try { await murRattrapage(env); } catch (e) { /* on réessaiera à la prochaine lecture */ }
   try { await murNettoyage(env); } catch (e) { /* idem */ }
+  try { await murMathSite(env); } catch (e) { /* idem */ }
   const limite = Math.min(MUR_MAX, Math.max(1, Number(c.limite) || 100));
   const fil = await murFil(env);
   const visibles = fil.filter(r => !r.cache || r.e === eleve.empreinte);
@@ -1117,6 +1118,70 @@ async function murCacher(env, c, cors) {
   r.cache = c.cache !== false;
   await murEcrireFil(env, fil);
   return json({ ok: true, cache: r.cache }, 200, cors);
+}
+
+// ---------- MathSite : notes d'évaluation et avancement, lus dans evaluations-data.js (au plus une fois par heure) ----------
+// Mêmes règles et mêmes clés que MathSite/evaluations.js (evalPublierSurLeMur, evalPublierAvancement) : une réussite
+// déjà publiée par la page n'est pas reprise. Le code de l'élève vient de ses données déjà gardées ici (fait:, rep:, prog:) ;
+// sans code connu, pas de prénom, donc rien sur le mur.
+const MATHSITE_DONNEES = "https://mikhub-dev.github.io/MathSite/evaluations-data.js";
+const MATHSITE_CLASSES = { "5e": "5e", seconde: "Seconde" };
+const MATHSITE_MIN = 5;
+function mathsiteLire(js) {
+  const d = {};
+  const re = /^window\.(\w+) = /gm, pos = [];
+  let m;
+  while ((m = re.exec(js))) pos.push([m[1], re.lastIndex, m.index]);
+  pos.forEach(([nom, debut], i) => {
+    const fin = i + 1 < pos.length ? pos[i + 1][2] : js.length;
+    try { d[nom] = JSON.parse(js.slice(debut, fin).trim().replace(/;$/, "")); } catch (e) {}
+  });
+  return d;
+}
+const mathsiteNombre = x => String(Math.round(x * 100) / 100).replace(".", ",");
+const mathsiteSur20 = (n, total) => Math.round((n.note * 20 / total + (n.bonus && typeof n.bonus.points === "number" ? n.bonus.points : 0)) * 10) / 10;
+async function murCodeDe(env, e, classe) {
+  for (const pre of [`fait:${e}:`, `rep:${e}:`, `prog:${e}:`]) {
+    for (const nom of await toutesLesCles(env, pre)) {
+      let v = null; try { v = JSON.parse(await env.SUIVI.get(nom)); } catch (x) {}
+      if (v && v.code && v.classe === classe) { const el = await identifier(env, classe, v.code); if (el && el.empreinte === e) return el.code; }
+    }
+  }
+  return null;
+}
+async function murMathSite(env, forcer) {
+  if (!forcer && await env.SUIVI.get("mur:mathsite")) return 0;
+  await env.SUIVI.put("mur:mathsite", "1", { expirationTtl: 3600 });
+  const r = await fetch(env.MATHSITE_DONNEES || MATHSITE_DONNEES, { cf: { cacheTtl: 300 } });
+  if (!r.ok) return 0;
+  const d = mathsiteLire(await r.text());
+  const E = d.EVALUATIONS || {}, N = d.EVAL_NOTES || {}, EL = d.EVAL_ELEVES || {};
+  let ajoutes = 0;
+  for (const annee of Object.keys(E)) for (const classe of Object.keys(MATHSITE_CLASSES)) {
+    const liste = (E[annee] || {})[classe] || [], notes = (N[annee] || {})[classe] || {}, label = MATHSITE_CLASSES[classe];
+    for (const e of ((EL[annee] || {})[classe] || [])) {
+      const noteDe = ev => { const n = notes[ev.id]; return (n && n.notes && n.notes[e]) || null; };
+      const faites = liste.filter(noteDe);
+      if (!faites.length) continue;
+      const code = await murCodeDe(env, e, classe);
+      if (!code) continue;
+      const ajouter = async (cle, texte, detail, grande, date) => { if (await murAjouter(env, e, classe, code, "mathsite", cle, texte, detail, grande, date, true)) ajoutes++; };
+      for (const ev of faites) {
+        const n20 = mathsiteSur20(noteDe(ev), ev.total);
+        if (n20 >= 10) await ajouter(`eval:${annee}:${classe}:${ev.id}`, `a obtenu [[${mathsiteNombre(n20)}/20]] à l'évaluation « ${ev.titre} »`, `${label}${ev.chapitre ? " · " + ev.chapitre : ""}`, n20 >= 16, ev.date || "");
+      }
+      // Avancement : paliers de 10 %, historique rejoué avec le total connu à chaque date de correction
+      const dates = faites.map(ev => (notes[ev.id] && notes[ev.id].publieLe) || ev.date || "").filter(Boolean).sort();
+      let max = 0;
+      for (const j of [...new Set(dates)]) {
+        const f = dates.filter(x => x <= j).length, t = liste.filter(ev => (ev.date || "") <= j).length;
+        if (t < MATHSITE_MIN) continue;
+        const p = Math.min(100, Math.floor(f / t * 10) * 10);
+        if (p > max) { max = p; await ajouter(`avancement:${annee}:${classe}:${p}`, `a fait [[${p} %]] des évaluations : ${f} sur ${t} à faire`, `${label} · Avancement des évaluations`, p % 50 === 0, j); }
+      }
+    }
+  }
+  return ajoutes;
 }
 
 // ---------- Nettoyage unique : réussites de test retirées du mur (demande d'Armen, 27/11/2026) ----------

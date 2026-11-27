@@ -11,7 +11,7 @@ async function chiffrer(prenom, code) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   return b64(iv) + "." + b64(new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, k, new TextEncoder().encode(prenom))));
 }
-const ELEVES = [["famille", "TESTAAAA", "ALICE"], ["famille", "TESTBBBB", "BRUNO"], ["5e", "TESTCCCC", null]];
+const ELEVES = [["famille", "TESTAAAA", "ALICE"], ["famille", "TESTBBBB", "BRUNO"], ["5e", "TESTCCCC", null], ["5e", "TESTDDDD", "DORA"]];
 const EMPREINTES = { "5e": [], seconde: [], famille: [] }, PRENOMS = {};
 for (const [classe, code, prenom] of ELEVES) {
   const e = await sha(`${SEL}${classe}:${code}`);
@@ -141,5 +141,35 @@ assert.ok(n1 > avant);
   assert.ok(!ids.includes("n1") && !ids.includes("n2"), "MorphoSite de PAPA et MARC retirées");
   assert.ok(["n3", "n4", "n5"].every(i => ids.includes(i)), "les autres réussites restent");
   assert.equal(ids.length, fil.length - 2);
+}
+// MathSite : notes et avancement lus dans evaluations-data.js par le serveur
+{
+  const eD = await sha(`${SEL}5e:TESTDDDD`), eC = await sha(`${SEL}5e:TESTCCCC`);
+  kv.set(`fait:${eD}:probabilites:1`, JSON.stringify({ code: "TESTDDDD", classe: "5e", date: "2026-11-01T10:00:00Z" }));
+  const evs = [], notes = {};
+  for (let i = 0; i < 10; i++) {
+    const date = `2026-10-${String(1 + i * 2).padStart(2, "0")}`;
+    evs.push({ id: "ev" + i, total: 10, titre: "Évaluation " + i, chapitre: "Chap", date });
+    if (i < 6) notes["ev" + i] = { publieLe: date, notes: { [eD]: { note: i === 0 ? 4 : 8.5 }, [eC]: { note: 9 } } };
+  }
+  const js = "// généré\nwindow.EVALUATIONS = " + JSON.stringify({ "2026-2027": { "5e": evs } }, null, 1) + ";\nwindow.EVAL_NOTES = " + JSON.stringify({ "2026-2027": { "5e": notes } }, null, 1)
+    + ";\nwindow.EVAL_ELEVES = " + JSON.stringify({ "2026-2027": { "5e": [eD, eC] } }) + ";\nwindow.EVAL_KPI = null;\n";
+  const vrai = globalThis.fetch;
+  let appels = 0;
+  globalThis.fetch = async () => { appels++; return new Response(js); };
+  // déjà publiée par la page : pas de doublon
+  await appel("/mur/publier", { classe: "5e", code: "TESTDDDD", site: "mathsite", cle: "eval:2026-2027:5e:ev1", texte: "a obtenu [[17/20]] à l'évaluation « Évaluation 1 »", date: "2026-10-03" });
+  kv.delete("mur:mathsite");
+  await appel("/mur/lire", A);
+  await appel("/mur/lire", A);
+  globalThis.fetch = vrai;
+  assert.equal(appels, 1, "au plus une lecture par heure");
+  const m = JSON.parse(kv.get("mur:fil")).filter(x => x.site === "mathsite" && x.prenom === "DORA");
+  const evals = m.filter(x => x.cle.startsWith("eval:")), av = m.filter(x => x.cle.startsWith("avancement:"));
+  assert.equal(evals.length, 5, "notes >= 10/20 seulement, sans doublon");
+  assert.ok(evals.find(x => x.cle.endsWith("ev2")).texte.includes("[[17/20]]"));
+  assert.equal(evals.find(x => x.cle.endsWith("ev2")).date, "2026-10-05T12:00:00.000Z");
+  assert.deepEqual(av.map(x => x.texte).sort(), ["a fait [[100 %]] des évaluations : 5 sur 5 à faire"], JSON.stringify(av.map(x => x.texte)));
+  assert.ok(!JSON.parse(kv.get("mur:fil")).some(x => x.e === eC), "élève sans prénom : rien");
 }
 console.log("mur.test.mjs : OK");
